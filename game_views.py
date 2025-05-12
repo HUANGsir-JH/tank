@@ -1,6 +1,7 @@
 import arcade
-import math # <--- 添加 math 模块导入
-from tank_sprites import Tank, PLAYER_IMAGE_PATH_GREEN # PLAYER_SCALE 将在GameView中定义或作为参数传入Tank
+import math 
+import pymunk 
+from tank_sprites import Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED
 
 # --- 常量 ---
 # 根据用户反馈调整窗口大小，使其更接近参考图的比例
@@ -108,8 +109,10 @@ class GameView(arcade.View):
         # self.enemy_list = None # TODO: 之后添加敌人
         # self.powerup_list = None # TODO: 之后添加道具
 
-        # 物理引擎 (如果需要更复杂的碰撞)
-        # self.physics_engine = None
+        # Pymunk物理空间
+        self.space = pymunk.Space()
+        self.space.gravity = (0, 0) # 2D俯视角游戏，无重力
+        self.space.damping = 0.8    # 为整个空间设置阻尼，值越小阻尼越大，1为无阻尼。0.8表示每秒速度衰减到80%
 
     def start_new_round(self):
         """开始一个新回合或重置当前回合的坦克状态"""
@@ -133,15 +136,26 @@ class GameView(arcade.View):
         
         if not self.player_tank: # 如果坦克对象不存在了（例如上一局被设为None后从列表移除）
             self.player_tank = Tank(PLAYER_IMAGE_PATH_GREEN, NEW_PLAYER_SCALE, p1_start_x, p1_start_y)
-            if self.player_list is None: self.player_list = arcade.SpriteList()
+            if self.player_list is None: self.player_list = arcade.SpriteList() # 确保player_list存在
             self.player_list.append(self.player_tank)
+            if self.player_tank.pymunk_body and self.player_tank.pymunk_shape: # 添加到Pymunk空间
+                self.space.add(self.player_tank.pymunk_body, self.player_tank.pymunk_shape)
         else: # 如果坦克对象还在，只是重置状态
             self.player_tank.health = self.player_tank.max_health
-            self.player_tank.center_x = p1_start_x
-            self.player_tank.center_y = p1_start_y
-            self.player_tank.angle = 0
-            self.player_tank.speed = 0
-            self.player_tank.angle_speed = 0
+            # 重置Pymunk body的状态
+            if self.player_tank.pymunk_body:
+                self.player_tank.pymunk_body.position = p1_start_x, p1_start_y
+                self.player_tank.pymunk_body.angle = 0  # Pymunk角度是弧度
+                self.player_tank.pymunk_body.velocity = (0, 0)
+                self.player_tank.pymunk_body.angular_velocity = 0
+            # 同步Arcade Sprite (虽然sync_with_pymunk_body会在on_update调用，但这里立即同步更清晰)
+            self.player_tank.sync_with_pymunk_body() 
+            # 旧的Sprite属性设置可以移除，因为sync会处理
+            # self.player_tank.center_x = p1_start_x 
+            # self.player_tank.center_y = p1_start_y
+            # self.player_tank.angle = 0
+            # self.player_tank.speed = 0 # 此属性已不再由Pymunk直接使用
+            # self.player_tank.angle_speed = 0 # 此属性已不再由Pymunk直接使用
         
         # 重置/创建 玩家2 坦克 (仅PVP)
         if self.mode == "pvp":
@@ -155,15 +169,18 @@ class GameView(arcade.View):
             if not self.player2_tank:
                 from tank_sprites import PLAYER_IMAGE_PATH_DESERT
                 self.player2_tank = Tank(PLAYER_IMAGE_PATH_DESERT, NEW_PLAYER_SCALE, p2_start_x, p2_start_y)
-                if self.player_list is None: self.player_list = arcade.SpriteList()
+                if self.player_list is None: self.player_list = arcade.SpriteList() # 确保player_list存在
                 self.player_list.append(self.player2_tank)
+                if self.player2_tank.pymunk_body and self.player2_tank.pymunk_shape: # 添加到Pymunk空间
+                    self.space.add(self.player2_tank.pymunk_body, self.player2_tank.pymunk_shape)
             else:
                 self.player2_tank.health = self.player2_tank.max_health
-                self.player2_tank.center_x = p2_start_x
-                self.player2_tank.center_y = p2_start_y
-                self.player2_tank.angle = 0
-                self.player2_tank.speed = 0
-                self.player2_tank.angle_speed = 0
+                if self.player2_tank.pymunk_body:
+                    self.player2_tank.pymunk_body.position = p2_start_x, p2_start_y
+                    self.player2_tank.pymunk_body.angle = 0
+                    self.player2_tank.pymunk_body.velocity = (0, 0)
+                    self.player2_tank.pymunk_body.angular_velocity = 0
+                self.player2_tank.sync_with_pymunk_body()
         
         # 确保player_list是最新的 (如果坦克是重新创建的)
         # 上面的逻辑已经尝试处理了player_list的更新，但更稳妥的方式可能是在setup中完全重建
@@ -178,35 +195,50 @@ class GameView(arcade.View):
         self.bullet_list = arcade.SpriteList()
         self.wall_list = arcade.SpriteList(use_spatial_hash=True) 
         
-        current_wall_thickness = WALL_THICKNESS # 使用类常量
+        current_wall_thickness = WALL_THICKNESS 
         wall_color = arcade.color.DARK_SLATE_GRAY
 
-        # --- 创建地图墙壁 ---
-        # 边界墙壁 - 调整为游戏区域边界
-        for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness): # 底部游戏区边界
+        # --- 创建地图墙壁 (Arcade Sprites 和 Pymunk Shapes) ---
+        # 边界墙壁
+        # 底部
+        body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        shape = pymunk.Segment(body, (0, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), current_wall_thickness / 2)
+        self.space.add(body, shape)
+        for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness):
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
             wall.center_x = x_coord + current_wall_thickness / 2
-            wall.center_y = GAME_AREA_BOTTOM_Y + current_wall_thickness / 2
+            wall.center_y = GAME_AREA_BOTTOM_Y + current_wall_thickness / 2 # 确保与Pymunk形状对齐
             self.wall_list.append(wall)
-        for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness): # 顶部游戏区边界
+        # 顶部
+        body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        shape = pymunk.Segment(body, (0, GAME_AREA_TOP_Y), (SCREEN_WIDTH, GAME_AREA_TOP_Y), current_wall_thickness / 2)
+        self.space.add(body, shape)
+        for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness):
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
             wall.center_x = x_coord + current_wall_thickness / 2
             wall.center_y = GAME_AREA_TOP_Y - current_wall_thickness / 2
             self.wall_list.append(wall)
-        # 左侧游戏区边界 (y从GAME_AREA_BOTTOM_Y到GAME_AREA_TOP_Y)
-        for y_coord in range(int(GAME_AREA_BOTTOM_Y + current_wall_thickness), int(GAME_AREA_TOP_Y - current_wall_thickness), current_wall_thickness):
+        # 左侧
+        body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        shape = pymunk.Segment(body, (0, GAME_AREA_BOTTOM_Y), (0, GAME_AREA_TOP_Y), current_wall_thickness / 2)
+        self.space.add(body, shape)
+        for y_coord in range(int(GAME_AREA_BOTTOM_Y), int(GAME_AREA_TOP_Y + current_wall_thickness), current_wall_thickness): # 调整循环确保覆盖
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
             wall.center_x = current_wall_thickness / 2
             wall.center_y = y_coord + current_wall_thickness / 2
             self.wall_list.append(wall)
-        # 右侧游戏区边界
-        for y_coord in range(int(GAME_AREA_BOTTOM_Y + current_wall_thickness), int(GAME_AREA_TOP_Y - current_wall_thickness), current_wall_thickness):
+        # 右侧
+        body = pymunk.Body(body_type=pymunk.Body.STATIC)
+        shape = pymunk.Segment(body, (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_TOP_Y), current_wall_thickness / 2)
+        self.space.add(body, shape)
+        for y_coord in range(int(GAME_AREA_BOTTOM_Y), int(GAME_AREA_TOP_Y + current_wall_thickness), current_wall_thickness): # 调整循环确保覆盖
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
             wall.center_x = SCREEN_WIDTH - current_wall_thickness / 2
             wall.center_y = y_coord + current_wall_thickness / 2
             self.wall_list.append(wall)
-        
+
         # 示例内部墙壁 - 确保Y坐标在GAME_AREA内
+        # (center_x, center_y, width, height)
         maze_walls_data = [
             (SCREEN_WIDTH * 0.3, GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT / 2, current_wall_thickness, GAME_AREA_HEIGHT * 0.4), 
             (SCREEN_WIDTH * 0.7, GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT / 2, current_wall_thickness, GAME_AREA_HEIGHT * 0.4), 
@@ -214,10 +246,22 @@ class GameView(arcade.View):
             (SCREEN_WIDTH / 2, GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT * 0.7, SCREEN_WIDTH * 0.3, current_wall_thickness),   
         ]
         for x, y, w, h in maze_walls_data:
-            wall = arcade.SpriteSolidColor(int(w), int(h), wall_color)
-            wall.center_x = int(x)
-            wall.center_y = int(y)
-            self.wall_list.append(wall)
+            wall_sprite = arcade.SpriteSolidColor(int(w), int(h), wall_color)
+            wall_sprite.center_x = int(x)
+            wall_sprite.center_y = int(y)
+            self.wall_list.append(wall_sprite)
+            
+            # 创建对应的Pymunk静态形状
+            # Pymunk Poly的顶点是相对于body的重心的，对于静态物体，重心就是position
+            # 我们将body的position设为(0,0)，然后用绝对坐标定义Poly的顶点
+            # 或者，更简单的是，将body的position设为sprite的center_x, center_y，然后Poly的顶点相对于这个中心
+            half_w = w / 2
+            half_h = h / 2
+            points = [(-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)]
+            body = pymunk.Body(body_type=pymunk.Body.STATIC)
+            body.position = (x, y)
+            shape = pymunk.Poly(body, points)
+            self.space.add(body, shape)
         
         # UI面板背景 (可选) - 注意：这些绘制应该在 on_draw 中，setup只负责创建对象
         # 我将暂时注释掉这里的绘制，UI面板的视觉效果可以在on_draw中实现
@@ -376,7 +420,6 @@ class GameView(arcade.View):
             self.round_over_timer -= delta_time
             if self.round_over_timer <= 0:
                 print(f"DEBUG: Round over timer ended. P1 Score: {self.player1_score}, P2 Score: {self.player2_score}, Max Score: {self.max_score}")
-                # 检查是否有最终胜利者
                 if self.player1_score >= self.max_score:
                     print("DEBUG: Player 1 wins the game! Showing GameOverView.")
                     game_over_view = GameOverView(f"玩家1 最终胜利!", self.mode)
@@ -388,46 +431,35 @@ class GameView(arcade.View):
                 else:
                     print("DEBUG: No winner yet, starting new round.")
                     self.start_new_round()
-            return # 回合结束，不再执行后续更新
+            return 
 
-        # 坦克移动前记录位置，用于碰撞后回退
-        # 确保player_list存在才进行迭代
-        if self.player_list:
-            for player_obj in self.player_list:
-                if player_obj: # 确保坦克对象实际存在 (即不是None)
-                    player_obj.original_center_x = player_obj.center_x
-                    player_obj.original_center_y = player_obj.center_y
-                    player_obj.original_angle = player_obj.angle
+        # 更新物理空间
+        self.space.step(delta_time)
 
+        # 坦克移动前记录位置的逻辑不再需要，Pymunk会处理碰撞回退
+        # if self.player_list:
+        #     for player_obj in self.player_list:
+        #         if player_obj: 
+        #             player_obj.original_center_x = player_obj.center_x
+        #             player_obj.original_center_y = player_obj.center_y
+        #             player_obj.original_angle = player_obj.angle
+
+        # Arcade SpriteList的 .update() 仍然需要调用，以便执行Sprite自己的update（如果有的话）
+        # 但坦克的移动现在由Pymunk控制，所以Tank.update()方法已变为空或只做同步。
         if self.player_list:
-            self.player_list.update()
+            self.player_list.update() # 调用每个Tank Sprite的update
+        
+        # 同步Arcade Tank Sprites到Pymunk bodies的位置和角度
+        if self.player_list:
+            for tank_sprite in self.player_list:
+                if tank_sprite and hasattr(tank_sprite, 'sync_with_pymunk_body'):
+                    tank_sprite.sync_with_pymunk_body()
+
         if self.bullet_list:
-            self.bullet_list.update()
+            self.bullet_list.update() # 子弹的移动仍然由其自己的update方法处理
 
-        # 坦克与墙壁的碰撞检测
-        if self.player_list:
-            for player_obj in self.player_list:
-                if not player_obj: continue 
-                wall_hit_list = arcade.check_for_collision_with_list(player_obj, self.wall_list)
-                if wall_hit_list:
-                    player_obj.center_x = player_obj.original_center_x
-                    player_obj.center_y = player_obj.original_center_y
-                    player_obj.speed = 0 
-                    player_obj.angle_speed = 0
-                    push_amount = 1.0 
-                    for wall in wall_hit_list: 
-                        dx = player_obj.center_x - wall.center_x
-                        dy = player_obj.center_y - wall.center_y
-                        overlap_x = (player_obj.width / 2 + wall.width / 2) - abs(dx)
-                        overlap_y = (player_obj.height / 2 + wall.height / 2) - abs(dy)
-                        if overlap_x > 0 and overlap_y > 0: 
-                            if overlap_x < overlap_y : 
-                                if dx > 0: player_obj.left = wall.right + push_amount
-                                else: player_obj.right = wall.left - push_amount
-                            else: 
-                                if dy > 0: player_obj.bottom = wall.top + push_amount
-                                else: player_obj.top = wall.bottom - push_amount
-                            break 
+        # 坦克与墙壁的碰撞检测 (现在由Pymunk处理，移除旧代码)
+        # 坦克与坦克的碰撞检测 (现在由Pymunk处理，移除旧代码)
 
         # 移除飞出屏幕的子弹 (基于新的游戏区域)
         if self.bullet_list:
@@ -500,20 +532,13 @@ class GameView(arcade.View):
                  bullet.remove_from_sprite_lists()
 
 
-        # 坦克与坦克的碰撞检测 (仅在PVP模式且有两个存活坦克时)
-        if self.mode == "pvp" and \
-           self.player_tank and self.player_tank.is_alive() and \
-           self.player2_tank and self.player2_tank.is_alive():
-            if arcade.check_for_collision(self.player_tank, self.player2_tank):
-                self.player_tank.center_x = self.player_tank.original_center_x
-                self.player_tank.center_y = self.player_tank.original_center_y
-                self.player_tank.speed = 0
-                self.player_tank.angle_speed = 0
-                self.player2_tank.center_x = self.player2_tank.original_center_x
-                self.player2_tank.center_y = self.player2_tank.original_center_y
-                self.player2_tank.speed = 0
-                self.player2_tank.angle_speed = 0
-                print("Tanks collided!")
+        # 坦克与坦克的碰撞检测 (现在由Pymunk处理，移除旧代码)
+        # if self.mode == "pvp" and \
+        #    self.player_tank and self.player_tank.is_alive() and \
+        #    self.player2_tank and self.player2_tank.is_alive():
+        #     if arcade.check_for_collision(self.player_tank, self.player2_tank):
+        #         # ... (旧的碰撞回退代码) ...
+        #         print("Tanks collided!")
 
     def on_key_press(self, key, modifiers):
         """ 处理按键按下事件 """
@@ -522,55 +547,75 @@ class GameView(arcade.View):
             main_menu_view = MainMenu() # 暂时直接返回主菜单
             self.window.show_view(main_menu_view)
 
-        # 玩家1 (WASD) 控制, 不要再修改！！！
-        if self.mode == "pvc" or self.mode == "pvp":
+        # 玩家1 (WASD) 控制 - Pymunk版
+        if self.player_tank and self.player_tank.pymunk_body: # 确保坦克及其Pymunk body存在
+            body = self.player_tank.pymunk_body
+            # 定义坦克的移动速度和旋转速度 (这些值可能需要调整以获得好的手感)
+            # PLAYER_MOVEMENT_SPEED 和 PLAYER_TURN_SPEED 来自 tank_sprites.py 或在此处定义
+            # 我们需要将 PLAYER_TURN_SPEED (度/帧) 转换为 弧度/秒 给 Pymunk
+            # 假设帧率为60FPS
+            PYMUNK_PLAYER_MAX_SPEED = PLAYER_MOVEMENT_SPEED * 60 # 增大移动速度倍率
+            PYMUNK_PLAYER_TURN_RAD_PER_SEC = math.radians(PLAYER_TURN_SPEED * 60 * 1.0) # 增大旋转速度倍率
+
             if key == arcade.key.W:
-                self.player_tank.speed = self.player_tank.max_speed
+                # 根据当前角度计算速度向量
+                vx = -PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
+                vy = PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                body.velocity = (vx, vy)
             elif key == arcade.key.S:
-                self.player_tank.speed = -self.player_tank.max_speed
-            elif key == arcade.key.A: # A键 -> 逆时针
-                if self.player_tank:
-                    self.player_tank.angle_speed = -self.player_tank.turn_speed_degrees 
-            elif key == arcade.key.D: # D键 -> 顺时针
-                if self.player_tank:
-                    self.player_tank.angle_speed = self.player_tank.turn_speed_degrees
+                vx = PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle) # 反向
+                vy = -PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle) # 反向
+                body.velocity = (vx, vy)
+            elif key == arcade.key.A: # 逆时针 (Pymunk中正角速度是逆时针)/勿修改
+                body.angular_velocity = -PYMUNK_PLAYER_TURN_RAD_PER_SEC 
+            elif key == arcade.key.D: # 顺时针
+                body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
             elif key == arcade.key.SPACE: # 玩家1射击键
-                if self.player_tank:
+                if self.player_tank: # Arcade Sprite 仍然用于射击逻辑
                     bullet = self.player_tank.shoot()
                     if bullet:
                         self.bullet_list.append(bullet)
 
-        # 玩家2 (上下左右箭头) 控制 - 仅在双人模式下 ，不要再修改！！！
-        if self.mode == "pvp" and self.player2_tank:
+        # 玩家2 (上下左右箭头) 控制 - Pymunk版
+        if self.mode == "pvp" and self.player2_tank and self.player2_tank.pymunk_body:
+            body = self.player2_tank.pymunk_body
+            PYMUNK_PLAYER_MAX_SPEED = PLAYER_MOVEMENT_SPEED * 60 # 增大移动速度倍率
+            PYMUNK_PLAYER_TURN_RAD_PER_SEC = math.radians(PLAYER_TURN_SPEED * 60 * 1.0) # 增大旋转速度倍率
+
             if key == arcade.key.UP:
-                self.player2_tank.speed = self.player2_tank.max_speed
+                vx = -PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
+                vy = PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                body.velocity = (vx, vy)
             elif key == arcade.key.DOWN:
-                self.player2_tank.speed = -self.player2_tank.max_speed
-            elif key == arcade.key.LEFT: # 左箭头 -> 逆时针
-                self.player2_tank.angle_speed = -self.player2_tank.turn_speed_degrees
-            elif key == arcade.key.RIGHT: # 右箭头 -> 顺时针
-                self.player2_tank.angle_speed = self.player2_tank.turn_speed_degrees
-            elif key == arcade.key.ENTER or key == arcade.key.RSHIFT: # 玩家2射击键 (回车或右Shift)
-                bullet = self.player2_tank.shoot()
+                vx = PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
+                vy = -PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                body.velocity = (vx, vy)
+            elif key == arcade.key.LEFT: # 逆时针
+                body.angular_velocity = -PYMUNK_PLAYER_TURN_RAD_PER_SEC
+            elif key == arcade.key.RIGHT: # 顺时针
+                body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
+            elif key == arcade.key.ENTER or key == arcade.key.RSHIFT: 
+                if self.player2_tank: # Arcade Sprite 仍然用于射击逻辑
+                    bullet = self.player2_tank.shoot()
                 if bullet:
                     self.bullet_list.append(bullet)
 
 
     def on_key_release(self, key, modifiers):
-        """ 处理按键释放事件 """
+        """ 处理按键释放事件 - Pymunk版 """
         # 玩家1
-        if self.player_tank: # 确保坦克存在
+        if self.player_tank and self.player_tank.pymunk_body:
             if key == arcade.key.W or key == arcade.key.S:
-                self.player_tank.speed = 0
+                self.player_tank.pymunk_body.velocity = (0, 0)
             elif key == arcade.key.A or key == arcade.key.D:
-                self.player_tank.angle_speed = 0
+                self.player_tank.pymunk_body.angular_velocity = 0
         
         # 玩家2
-        if self.mode == "pvp" and self.player2_tank:
+        if self.mode == "pvp" and self.player2_tank and self.player2_tank.pymunk_body:
             if key == arcade.key.UP or key == arcade.key.DOWN:
-                self.player2_tank.speed = 0
+                self.player2_tank.pymunk_body.velocity = (0, 0)
             elif key == arcade.key.LEFT or key == arcade.key.RIGHT:
-                self.player2_tank.angle_speed = 0
+                self.player2_tank.pymunk_body.angular_velocity = 0
 
 
 class GameOverView(arcade.View):

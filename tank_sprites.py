@@ -1,6 +1,7 @@
 import arcade
 import math
 import os
+import pymunk # <--- 添加Pymunk导入
 
 # --- 常量 ---
 SCREEN_WIDTH = 800 # 暂时保留，以便Tank类中的边界检查，后续可以考虑通过参数传入或从主游戏获取
@@ -86,6 +87,86 @@ class Tank(arcade.Sprite):
         self.health = 5 # 初始生命值为5
         self.max_health = 5 # 最大生命值，用于绘制血条
 
+        # Pymunk相关属性
+        self.pymunk_body = None
+        self.pymunk_shape = None
+        # 坦克的物理属性 (可以根据需要调整)
+        mass = 10 
+        # 假设坦克是矩形，计算转动惯量
+        # 对于实心矩形，I = m * (width^2 + height^2) / 12
+        # 我们需要坦克的实际宽度和高度（解缩放后）
+        # Sprite的width/height是缩放后的，但Pymunk形状用的是未缩放的顶点，然后body的scale会影响整体
+        # 或者，直接用Pymunk提供的矩形惯量计算函数
+        # 暂时使用一个估算值或让Pymunk自动计算（如果形状简单）
+        # Pymunk的Poly形状需要顶点列表
+        
+        # 获取Sprite的未缩放尺寸 (如果图片已加载)
+        if self.texture and hasattr(self.texture, 'image') and self.texture.image:
+            unscaled_width = self.texture.image.width
+            unscaled_height = self.texture.image.height
+        elif self.texture: # 如果texture存在但没有image属性或image为None，尝试直接用texture的宽高
+            unscaled_width = self.texture.width
+            unscaled_height = self.texture.height
+            if isinstance(unscaled_width, tuple): # 防御性检查，如果还是元组
+                print(f"Warning: self.texture.width is a tuple: {unscaled_width}. Using first element.")
+                unscaled_width = unscaled_width[0]
+            if isinstance(unscaled_height, tuple):
+                print(f"Warning: self.texture.height is a tuple: {unscaled_height}. Using first element.")
+                unscaled_height = unscaled_height[0]
+        else: # 占位符尺寸
+            unscaled_width = int(50) 
+            unscaled_height = int(60)
+
+        print(f"DEBUG Tank Init: unscaled_width type: {type(unscaled_width)}, value: {unscaled_width}")
+        print(f"DEBUG Tank Init: unscaled_height type: {type(unscaled_height)}, value: {unscaled_height}")
+        print(f"DEBUG Tank Init: self.scale type: {type(self.scale)}, value: {self.scale}")
+
+        try:
+            # 确保转换为数值类型进行计算
+            calc_unscaled_width = float(unscaled_width[0] if isinstance(unscaled_width, tuple) else unscaled_width)
+            calc_unscaled_height = float(unscaled_height[0] if isinstance(unscaled_height, tuple) else unscaled_height)
+        except Exception as e:
+            print(f"ERROR converting unscaled dimensions: {e}. Falling back to defaults.")
+            calc_unscaled_width = 50.0
+            calc_unscaled_height = 60.0
+        
+        current_scale_for_pymunk = self.scale
+        if isinstance(self.scale, tuple):
+            print(f"DEBUG Tank Init: self.scale is a tuple {self.scale}. Using self.scale[0] for Pymunk calculations.")
+            current_scale_for_pymunk = self.scale[0]
+            
+        # Pymunk的Poly顶点是相对于body的重心的。对于坦克，重心在中心。
+        half_w = calc_unscaled_width * current_scale_for_pymunk / 2
+        half_h = calc_unscaled_height * current_scale_for_pymunk / 2 # 使用缩放后的半宽高创建Pymunk形状
+        
+        vertices = [(-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)]
+        moment = pymunk.moment_for_poly(mass, vertices) # 使用缩放后的顶点计算moment
+
+        self.pymunk_body = pymunk.Body(mass, moment)
+        self.pymunk_body.position = center_x, center_y
+        self.pymunk_body.angle = math.radians(self.angle) # Pymunk使用弧度
+
+        self.pymunk_shape = pymunk.Poly(self.pymunk_body, vertices)
+        self.pymunk_shape.elasticity = 0.1 # 碰撞弹性
+        self.pymunk_shape.friction = 0.8   # 摩擦力
+        # self.pymunk_shape.collision_type = 1 # 示例碰撞类型，之后会定义常量
+
+        # 设置阻尼以防止无限滑动
+        # Pymunk的 body.damping: 值越小，阻尼越强。1.0 为无阻尼。
+        # 0.1 表示每秒速度衰减到其原始值的10% (velocity_t+1 = velocity_t * damping)
+        # 实际上是 velocity_new = velocity_old * pow(damping, dt)
+        # 如果 damping = 0.1, dt = 1/60, pow(0.1, 1/60) approx 0.962 (每帧衰减约4%)
+        # 如果 damping = 0.01, dt = 1/60, pow(0.01, 1/60) approx 0.926 (每帧衰减约7.4%)
+        # 之前用的0.05，对应约0.951 (每帧衰减约5%)
+        # 为了更强的停止效果，尝试一个更小的值。
+        self.pymunk_body.damping = 0.01 # 尝试一个非常强的阻尼
+        # 也可以设置角阻尼
+        self.pymunk_body.angular_damping = 0.01 # 使旋转也快速停止
+
+        # 将Arcade Sprite与Pymunk Body关联起来，方便之后同步
+        self.pymunk_body.sprite = self
+
+
     def take_damage(self, amount):
         """坦克受到伤害"""
         self.health -= amount
@@ -98,28 +179,25 @@ class Tank(arcade.Sprite):
         return self.health > 0
 
     def update(self, delta_time: float = 1/60): # 添加 delta_time 参数
-        # 更新角度
-        self.angle += self.angle_speed # angle_speed 代表每帧的旋转角度
+        # Pymunk接管后，坦克的移动和旋转主要由物理引擎控制
+        # Arcade Sprite的update方法主要用于同步Pymunk body的状态到Sprite
+        # 以及处理非物理的逻辑（例如动画，但坦克目前没有）
 
-        # 根据当前角度和速度更新位置
-        angle_rad = math.radians(self.angle)
-        self.center_x += -self.speed * math.sin(angle_rad)
-        self.center_y += self.speed * math.cos(angle_rad)
+        # 实际的移动和旋转逻辑将通过在GameView中对Pymunk body施加力/速度来完成
+        # 这里的 self.speed 和 self.angle_speed 将不再直接驱动Sprite移动
+        # 边界检查也将由Pymunk与静态墙壁的碰撞处理
 
-        # 边界检查 (确保坦克在屏幕内)
-        if self.left < 0:
-            self.left = 0
-            self.speed = 0 # 碰到边界停止
-        elif self.right > SCREEN_WIDTH - 1:
-            self.right = SCREEN_WIDTH - 1
-            self.speed = 0 # 碰到边界停止
+        # 同步Sprite到Pymunk body (这一步通常在GameView的on_update中，在space.step()之后进行)
+        # 但如果Tank类自己有一些基于Pymunk body的逻辑，可以在这里访问
+        pass
 
-        if self.bottom < 0:
-            self.bottom = 0
-            self.speed = 0 # 碰到边界停止
-        elif self.top > SCREEN_HEIGHT - 1:
-            self.top = SCREEN_HEIGHT - 1
-            self.speed = 0 # 碰到边界停止
+
+    def sync_with_pymunk_body(self):
+        """将Arcade Sprite的位置和角度同步到Pymunk Body的状态"""
+        if self.pymunk_body:
+            self.center_x = self.pymunk_body.position.x
+            self.center_y = self.pymunk_body.position.y
+            self.angle = math.degrees(self.pymunk_body.angle) # Pymunk是弧度，Arcade是角度
 
     def shoot(self):
         # TODO: 实现射击逻辑
