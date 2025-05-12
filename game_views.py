@@ -104,6 +104,7 @@ class GameView(arcade.View):
         self.round_over_timer = 0.0 # 回合结束后的等待计时器
         self.round_over_delay = 2.0 # 回合结束后等待2秒开始下一回合或结束游戏
         self.max_score = 2 # 获胜需要的胜场数
+        self.round_result_text = "" # 用于显示回合结束提示
         # self.enemy_list = None # TODO: 之后添加敌人
         # self.powerup_list = None # TODO: 之后添加道具
 
@@ -113,6 +114,7 @@ class GameView(arcade.View):
     def start_new_round(self):
         """开始一个新回合或重置当前回合的坦克状态"""
         print("Starting new round / Resetting tanks...")
+        self.round_result_text = "" # 清除上一回合的提示
         self.round_over = False
         self.round_over_timer = 0.0
         if self.bullet_list: # 确保bullet_list已初始化
@@ -264,7 +266,7 @@ class GameView(arcade.View):
         # 玩家2 UI (仅PVP模式)
         if self.mode == "pvp":
             # P2 胜场 (最右侧)
-            p2_wins_x = SCREEN_WIDTH - 30 # 右对齐的X坐标
+            p2_wins_x = SCREEN_WIDTH - 10 # 调整P2胜场X坐标，更靠右
             arcade.draw_text(f"胜场: {self.player2_score}", 
                              p2_wins_x, 
                              p1_ui_y_bar + 7, # Y坐标与P1胜场对齐
@@ -273,6 +275,47 @@ class GameView(arcade.View):
                              anchor_x="right", anchor_y="center")
 
             # P2 血条 (在胜场的左边)
+            # 假设胜场文字大致宽度为80 (估算值，"胜场: 0" 大约4个汉字宽度 + 数字)
+            # 您可以根据实际显示效果微调这个估算宽度或固定间距
+            estimated_wins_text_width = 80 # 根据 "胜场: X" 调整
+            health_bar_margin = 20 # 血条与胜场文字的间距
+            p2_health_bar_right_x = p2_wins_x - estimated_wins_text_width - health_bar_margin
+            p2_health_bar_x = p2_health_bar_right_x - 100 # bar_width 默认为100
+            
+            if self.player2_tank and self.player2_tank.is_alive():
+                self.draw_health_bar(p2_health_bar_x, p1_ui_y_bar, self.player2_tank.health, self.player2_tank.max_health)
+                
+                # P2 标识 (在血条的左边)
+                p2_label_margin = 10 # P2标识与血条的间距
+                # 假设 "P2" 标识宽度约30-40
+                # estimated_p2_label_width = 40 
+                # p2_label_x = p2_health_bar_x - p2_label_margin - estimated_p2_label_width / 2 # 以中心点定位
+                # 为了简单，直接给一个固定X，然后调整
+                # arcade.draw_text("P2", p2_health_bar_x - p2_label_margin - 15 , p1_ui_y_text, ui_text_color, font_size=18, anchor_x="center", anchor_y="center")
+                # 更精确的定位：
+                p2_text_x_for_label = p2_health_bar_x - p2_label_margin 
+                arcade.draw_text("P2", p2_text_x_for_label, p1_ui_y_text, ui_text_color, font_size=18, anchor_x="right", anchor_y="center")
+
+        # 绘制回合结束提示
+        if self.round_over and self.round_over_timer > 0 and self.round_result_text:
+            # 半透明背景蒙层
+            overlay_width = SCREEN_WIDTH * 0.7
+            overlay_height = SCREEN_HEIGHT * 0.3
+            overlay_center_x = SCREEN_WIDTH / 2
+            overlay_center_y = SCREEN_HEIGHT / 2
+            arcade.draw_lrbt_rectangle_filled(overlay_center_x - overlay_width / 2, 
+                                              overlay_center_x + overlay_width / 2,
+                                              overlay_center_y - overlay_height / 2,
+                                              overlay_center_y + overlay_height / 2,
+                                              (0, 0, 0, 150)) # 半透明黑色
+            # 回合结果文字
+            arcade.draw_text(self.round_result_text, 
+                             SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 
+                             arcade.color.WHITE_SMOKE, font_size=30, 
+                             anchor_x="center", anchor_y="center", bold=True)
+
+
+    def draw_health_bar(self, x, y, current_health, max_health, bar_width=100, bar_height=15, heart_size=12):
             # 假设胜场文字大致宽度为80 (估算值，"胜场: 0" 大约4个汉字宽度 + 数字)
             # 您可以根据实际显示效果微调这个估算宽度或固定间距
             estimated_wins_text_width = 80 
@@ -332,15 +375,18 @@ class GameView(arcade.View):
         if self.round_over:
             self.round_over_timer -= delta_time
             if self.round_over_timer <= 0:
+                print(f"DEBUG: Round over timer ended. P1 Score: {self.player1_score}, P2 Score: {self.player2_score}, Max Score: {self.max_score}")
                 # 检查是否有最终胜利者
                 if self.player1_score >= self.max_score:
+                    print("DEBUG: Player 1 wins the game! Showing GameOverView.")
                     game_over_view = GameOverView(f"玩家1 最终胜利!", self.mode)
                     self.window.show_view(game_over_view)
                 elif self.mode == "pvp" and self.player2_score >= self.max_score:
+                    print("DEBUG: Player 2 wins the game! Showing GameOverView.")
                     game_over_view = GameOverView(f"玩家2 最终胜利!", self.mode)
                     self.window.show_view(game_over_view)
                 else:
-                    # 开始新回合
+                    print("DEBUG: No winner yet, starting new round.")
                     self.start_new_round()
             return # 回合结束，不再执行后续更新
 
@@ -433,13 +479,17 @@ class GameView(arcade.View):
                             if not self.round_over:
                                 self.round_over = True
                                 self.round_over_timer = self.round_over_delay
-                                if tank is self.player_tank:
+                                if tank is self.player_tank: # P1 坦克被摧毁
+                                    # self.player_tank = None # 不在此处设为None，由start_new_round处理
                                     if self.mode == "pvp": 
                                         self.player2_score += 1
+                                        self.round_result_text = "玩家2 本回合胜利!"
                                         print(f"P2 scores! P1: {self.player1_score}, P2: {self.player2_score}")
-                                    # else: TODO: PVC 模式下电脑获胜
-                                elif self.mode == "pvp" and tank is self.player2_tank:
+                                    # else: TODO: PVC 模式下电脑获胜，玩家输
+                                elif self.mode == "pvp" and tank is self.player2_tank: # P2 坦克被摧毁
+                                    # self.player2_tank = None # 不在此处设为None
                                     self.player1_score += 1
+                                    self.round_result_text = "玩家1 本回合胜利!"
                                     print(f"P1 scores! P1: {self.player1_score}, P2: {self.player2_score}")
                         break # 一颗子弹只处理一次对坦克的击中
                 if self.round_over: break # 如果回合已结束，停止检查其他子弹
