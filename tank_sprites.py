@@ -83,7 +83,19 @@ class Tank(arcade.Sprite):
         self.angle_speed = 0  # 角度变化速度 (如果需要平滑旋转)
         self.max_speed = max_speed
         self.turn_speed_degrees = turn_speed_degrees  # 每帧旋转的角度
-        self.health = 100 # 示例生命值
+        self.health = 5 # 初始生命值为5
+        self.max_health = 5 # 最大生命值，用于绘制血条
+
+    def take_damage(self, amount):
+        """坦克受到伤害"""
+        self.health -= amount
+        if self.health < 0:
+            self.health = 0
+        print(f"Tank at ({self.center_x:.0f},{self.center_y:.0f}) took {amount} damage, health: {self.health}")
+
+    def is_alive(self):
+        """检查坦克是否还有生命值"""
+        return self.health > 0
 
     def update(self, delta_time: float = 1/60): # 添加 delta_time 参数
         # 更新角度
@@ -126,8 +138,8 @@ class Tank(arcade.Sprite):
         
         # actual_bullet_angle = self.angle - IMAGE_BARREL_DIRECTION_OFFSET
         actual_bullet_angle = IMAGE_BARREL_DIRECTION_OFFSET - self.angle # 这里我们需要将炮管的方向转换为子弹的发射角度
-        # print(f"Tank angle: {self.angle:.1f}, Barrel offset: {IMAGE_BARREL_DIRECTION_OFFSET:.1f}, Bullet emission angle: {actual_bullet_angle:.1f}") # 移除旧的打印
-        bullet = Bullet(self.center_x, self.center_y, actual_bullet_angle)
+        # print(f"Tank angle: {self.angle:.1f}, Barrel offset: {IMAGE_BARREL_DIRECTION_OFFSET:.1f}, Bullet emission angle: {actual_bullet_angle:.1f}")
+        bullet = Bullet(owner=self, tank_center_x=self.center_x, tank_center_y=self.center_y, actual_emission_angle_degrees=actual_bullet_angle)
         return bullet
 
 # --- 子弹类 ---
@@ -139,11 +151,12 @@ BULLET_COLOR = arcade.color.YELLOW_ORANGE # 让子弹颜色更显眼
 
 class Bullet(arcade.SpriteSolidColor):
     """ 子弹类 """
-    def __init__(self, tank_center_x, tank_center_y, actual_emission_angle_degrees, speed=BULLET_SPEED, color=BULLET_COLOR):
+    def __init__(self, owner, tank_center_x, tank_center_y, actual_emission_angle_degrees, speed=BULLET_SPEED, color=BULLET_COLOR):
         # 使用固定宽高，不再依赖 scale 参数传递给 SpriteSolidColor
         super().__init__(BULLET_WIDTH, BULLET_HEIGHT, color)
-        # print(f"Bullet created with angle: {actual_emission_angle_degrees:.1f}") # 移除旧的打印
+        # print(f"Bullet created with angle: {actual_emission_angle_degrees:.1f}")
         
+        self.owner = owner # 发射该子弹的坦克
         self.angle = actual_emission_angle_degrees # 子弹的飞行角度和视觉角度
         self.speed = speed
         self.bounce_count = 0 # 初始化反弹计数器
