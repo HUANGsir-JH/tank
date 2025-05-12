@@ -149,7 +149,7 @@ class Tank(arcade.Sprite):
         self.pymunk_shape = pymunk.Poly(self.pymunk_body, vertices)
         self.pymunk_shape.elasticity = 0.1 # 碰撞弹性
         self.pymunk_shape.friction = 0.8   # 摩擦力
-        # self.pymunk_shape.collision_type = 1 # 示例碰撞类型，之后会定义常量
+        self.pymunk_shape.collision_type = COLLISION_TYPE_TANK # 设置坦克的碰撞类型
 
         # 设置阻尼以防止无限滑动
         # Pymunk的 body.damping: 值越小，阻尼越强。1.0 为无阻尼。
@@ -221,25 +221,38 @@ class Tank(arcade.Sprite):
         return bullet
 
 # --- 子弹类 ---
-BULLET_SPEED = 12
-# BULLET_SCALE = 1.0 # SpriteSolidColor 不直接用 scale, 而是用width/height
-BULLET_WIDTH = 6 # 子弹宽度
-BULLET_HEIGHT = 10 # 子弹高度
-BULLET_COLOR = arcade.color.YELLOW_ORANGE # 让子弹颜色更显眼
+BULLET_SPEED = 12 # 这个速度值之后会用于Pymunk body的初始速度
+BULLET_WIDTH = 6 
+BULLET_HEIGHT = 10 
+BULLET_COLOR = arcade.color.YELLOW_ORANGE
+
+# Pymunk碰撞类型常量 (也可以定义在game_views.py或一个专门的常量模块)
+COLLISION_TYPE_BULLET = 1
+COLLISION_TYPE_WALL = 2 # 假设墙壁用这个
+COLLISION_TYPE_TANK = 3 # 假设坦克用这个
 
 class Bullet(arcade.SpriteSolidColor):
     """ 子弹类 """
-    def __init__(self, owner, tank_center_x, tank_center_y, actual_emission_angle_degrees, speed=BULLET_SPEED, color=BULLET_COLOR):
-        # 使用固定宽高，不再依赖 scale 参数传递给 SpriteSolidColor
+    def __init__(self, owner, tank_center_x, tank_center_y, actual_emission_angle_degrees, speed_magnitude=BULLET_SPEED, color=BULLET_COLOR):
         super().__init__(BULLET_WIDTH, BULLET_HEIGHT, color)
-        # print(f"Bullet created with angle: {actual_emission_angle_degrees:.1f}")
         
-        self.owner = owner # 发射该子弹的坦克
-        self.angle = actual_emission_angle_degrees # 子弹的飞行角度和视觉角度
-        self.speed = speed
-        self.bounce_count = 0 # 初始化反弹计数器
-        self.max_bounces = 3  # 最大反弹次数
+        self.owner = owner 
+        self.angle = actual_emission_angle_degrees # Arcade Sprite的视觉角度
+        # self.speed 不再直接用于Arcade移动，但可以保留用于Pymunk初始速度计算
+        self.bounce_count = 0 
+        self.max_bounces = 3  
 
+        # Pymunk相关属性
+        self.pymunk_body = None
+        self.pymunk_shape = None
+        mass = 0.1 # 子弹质量可以很小
+        # 子弹通常用圆形碰撞体，或者一个细长的矩形
+        # 使用矩形以匹配视觉
+        radius = BULLET_WIDTH / 2 # 如果用圆形
+        moment = pymunk.moment_for_box(mass, (BULLET_WIDTH, BULLET_HEIGHT)) # 矩形惯量
+        
+        self.pymunk_body = pymunk.Body(mass, moment)
+        
         # 计算炮口偏移量
         # barrel_offset 是从坦克中心点沿炮管方向到炮口的距离
         barrel_offset = 25 * PLAYER_SCALE 
@@ -249,21 +262,51 @@ class Bullet(arcade.SpriteSolidColor):
         
         # 子弹的初始位置在炮口
         # Arcade Sprite 角度0度朝上。前进方向的矢量是 (-sin(rad), cos(rad))
-        self.center_x = tank_center_x - barrel_offset * math.sin(emission_angle_rad)
-        self.center_y = tank_center_y + barrel_offset * math.cos(emission_angle_rad)
+        # 子弹的初始位置在炮口
+        self.pymunk_body.position = (
+            tank_center_x - barrel_offset * math.sin(emission_angle_rad),
+            tank_center_y + barrel_offset * math.cos(emission_angle_rad)
+        )
+        self.pymunk_body.angle = math.radians(actual_emission_angle_degrees) # Pymunk角度
+
+        # 设置初始速度 (将 speed_magnitude 视为 像素/帧，转换为 像素/秒)
+        # 假设游戏目标帧率为60 FPS
+        pymunk_initial_speed = speed_magnitude * 60 
+        vx = -pymunk_initial_speed * math.sin(self.pymunk_body.angle) 
+        vy = pymunk_initial_speed * math.cos(self.pymunk_body.angle)
+        self.pymunk_body.velocity = (vx, vy)
+
+        # 将子弹自身阻尼设为1.0 (无阻尼)，使其主要受空间阻尼或碰撞影响
+        self.pymunk_body.damping = 1.0 
 
 
-    def update(self, delta_time: float = 1/60): # 添加 delta_time 参数
-        """ 移动子弹 """
-        # 子弹的 self.angle 是其飞行和视觉角度 (0度朝上)
-        angle_rad = math.radians(self.angle)
-        
-        # 根据Arcade Sprite的移动方式 (0度朝上时，前进是 y增加, x不变的特例)
-        # dx = -speed * sin(angle_rad)
-        # dy =  speed * cos(angle_rad)
-        # 假设 self.speed 是 像素/帧
-        self.center_x += -self.speed * math.sin(angle_rad)
-        self.center_y += self.speed * math.cos(angle_rad)
+        # 创建Pymunk形状
+        # 使用Poly来匹配SpriteSolidColor的矩形视觉
+        half_w = BULLET_WIDTH / 2
+        half_h = BULLET_HEIGHT / 2
+        vertices = [(-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)]
+        self.pymunk_shape = pymunk.Poly(self.pymunk_body, vertices)
+        self.pymunk_shape.friction = 0.5 
+        self.pymunk_shape.elasticity = 0.9 # 子弹可以设置较高弹性用于反弹
+        self.pymunk_shape.collision_type = COLLISION_TYPE_BULLET
+        self.pymunk_body.sprite = self # 关联Sprite
+
+        # 同步初始视觉位置 (虽然GameView的on_update会做，但这里确保初始帧正确)
+        self.sync_with_pymunk_body()
+
+
+    def update(self, delta_time: float = 1/60): 
+        """ 移动子弹 - 现在由Pymunk控制，此方法主要用于同步 """
+        # 子弹的移动由Pymunk物理引擎处理
+        # 此方法可以保留为空，或者用于非物理的更新（例如动画，但子弹没有）
+        pass
+
+    def sync_with_pymunk_body(self):
+        """将Arcade Sprite的位置和角度同步到Pymunk Body的状态"""
+        if self.pymunk_body:
+            self.center_x = self.pymunk_body.position.x
+            self.center_y = self.pymunk_body.position.y
+            self.angle = math.degrees(self.pymunk_body.angle)
 
         # 移除飞出屏幕的子弹 (这个逻辑应该在GameView中处理，因为它能访问bullet_list)
         # if self.bottom > SCREEN_HEIGHT or self.top < 0 or \

@@ -1,7 +1,8 @@
 import arcade
 import math 
 import pymunk 
-from tank_sprites import Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED
+from tank_sprites import (Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED,
+                          COLLISION_TYPE_BULLET, COLLISION_TYPE_WALL, COLLISION_TYPE_TANK)
 
 # --- 常量 ---
 # 根据用户反馈调整窗口大小，使其更接近参考图的比例
@@ -111,8 +112,92 @@ class GameView(arcade.View):
 
         # Pymunk物理空间
         self.space = pymunk.Space()
-        self.space.gravity = (0, 0) # 2D俯视角游戏，无重力
-        self.space.damping = 0.8    # 为整个空间设置阻尼，值越小阻尼越大，1为无阻尼。0.8表示每秒速度衰减到80%
+        self.space.gravity = (0, 0) 
+        self.space.damping = 0.8    
+        
+        # 用于在碰撞回调后安全移除Pymunk body和Arcade sprite
+        self.pymunk_bodies_to_remove_post_step = []
+        self.arcade_sprites_to_remove_post_step = []
+
+        self._setup_collision_handlers()
+
+    def _setup_collision_handlers(self):
+        """设置Pymunk碰撞处理器"""
+        # 子弹 vs 墙壁
+        handler_bullet_wall = self.space.add_collision_handler(COLLISION_TYPE_BULLET, COLLISION_TYPE_WALL)
+        handler_bullet_wall.pre_solve = self._bullet_hit_wall_handler # pre_solve在物理计算前，允许修改碰撞属性或忽略碰撞
+
+        # 子弹 vs 坦克
+        handler_bullet_tank = self.space.add_collision_handler(COLLISION_TYPE_BULLET, COLLISION_TYPE_TANK)
+        handler_bullet_tank.pre_solve = self._bullet_hit_tank_handler
+    
+    def _bullet_hit_wall_handler(self, arbiter: pymunk.Arbiter, space: pymunk.Space, data):
+        """Pymunk回调：子弹撞墙"""
+        bullet_shape, wall_shape = arbiter.shapes
+        bullet_sprite = bullet_shape.body.sprite # 我们在创建时关联了sprite
+
+        bullet_sprite.bounce_count += 1
+        if bullet_sprite.bounce_count >= bullet_sprite.max_bounces:
+            print(f"Bullet {id(bullet_sprite)} to be removed after {bullet_sprite.bounce_count} bounces (hit wall).")
+            if bullet_shape.body not in self.pymunk_bodies_to_remove_post_step:
+                self.pymunk_bodies_to_remove_post_step.append(bullet_shape.body)
+            if bullet_sprite not in self.arcade_sprites_to_remove_post_step:
+                self.arcade_sprites_to_remove_post_step.append(bullet_sprite)
+            return False # 阻止碰撞的物理反弹，因为子弹要消失了
+        else:
+            # Pymunk的 shape.elasticity 会处理反弹的物理效果。
+            # 如果需要更精确的角度控制，可以在这里修改arbiter的restitution或surface_velocity
+            # 但通常依赖elasticity即可。我们已经在Bullet的shape上设置了elasticity=0.9
+            print(f"Bullet {id(bullet_sprite)} bounced off wall. Bounces: {bullet_sprite.bounce_count}")
+            # Pymunk的弹性已处理反弹，这里返回True让物理引擎继续处理
+            # 如果我们想手动计算反弹角度，可以在这里修改bullet_shape.body.velocity和angle
+            # 但Pymunk的弹性通常更真实。
+            # 注意：如果子弹的弹性很高，它可能会多次快速碰撞同一面墙，导致bounce_count迅速增加。
+            # 可能需要一个冷却时间或者更复杂的反弹逻辑。
+            # 简单的处理是让Pymunk的弹性起作用。
+            pass 
+        return True # 允许碰撞发生并由Pymunk处理物理反弹
+
+    def _bullet_hit_tank_handler(self, arbiter: pymunk.Arbiter, space: pymunk.Space, data):
+        """Pymunk回调：子弹撞坦克"""
+        bullet_shape, tank_shape = arbiter.shapes
+        
+        # 确保获取到正确的bullet和tank shape (arbiter.shapes顺序不保证)
+        if bullet_shape.collision_type == COLLISION_TYPE_BULLET:
+            bullet_sprite = bullet_shape.body.sprite
+            tank_sprite = tank_shape.body.sprite
+        else: #顺序反了
+            bullet_sprite = tank_shape.body.sprite # 这实际上是bullet
+            tank_sprite = bullet_shape.body.sprite # 这实际上是tank
+            # 更严谨的检查：
+            if not (bullet_sprite.pymunk_shape.collision_type == COLLISION_TYPE_BULLET and \
+                    tank_sprite.pymunk_shape.collision_type == COLLISION_TYPE_TANK):
+                print("ERROR: Collision handler shape order assumption wrong and recovery failed.")
+                return False # 忽略此碰撞
+
+        if bullet_sprite.owner is not tank_sprite and tank_sprite.is_alive():
+            if not self.round_over: # 只有在回合进行中才处理伤害
+                tank_sprite.take_damage(1)
+                # 子弹击中坦克后消失
+                if bullet_shape.body not in self.pymunk_bodies_to_remove_post_step:
+                    self.pymunk_bodies_to_remove_post_step.append(bullet_shape.body)
+                if bullet_sprite not in self.arcade_sprites_to_remove_post_step:
+                    self.arcade_sprites_to_remove_post_step.append(bullet_sprite)
+
+                if not tank_sprite.is_alive():
+                    print(f"Tank ({tank_sprite.center_x:.0f},{tank_sprite.center_y:.0f}) destroyed by Pymunk bullet!")
+                    if not self.round_over: # 再次检查，因为伤害可能导致回合结束
+                        self.round_over = True
+                        self.round_over_timer = self.round_over_delay
+                        if tank_sprite is self.player_tank:
+                            if self.mode == "pvp":
+                                self.player2_score += 1
+                                self.round_result_text = "玩家2 本回合胜利!"
+                        elif self.mode == "pvp" and tank_sprite is self.player2_tank:
+                            self.player1_score += 1
+                            self.round_result_text = "玩家1 本回合胜利!"
+            return False # 子弹击中坦克后应该消失，不发生物理反弹
+        return False # 如果是自己的子弹或坦克已死亡，忽略碰撞的物理效果
 
     def start_new_round(self):
         """开始一个新回合或重置当前回合的坦克状态"""
@@ -201,36 +286,48 @@ class GameView(arcade.View):
         # --- 创建地图墙壁 (Arcade Sprites 和 Pymunk Shapes) ---
         # 边界墙壁
         # 底部
-        body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        shape = pymunk.Segment(body, (0, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), current_wall_thickness / 2)
-        self.space.add(body, shape)
+        body_bottom = pymunk.Body(body_type=pymunk.Body.STATIC)
+        shape_bottom = pymunk.Segment(body_bottom, (0, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), current_wall_thickness / 2)
+        shape_bottom.collision_type = COLLISION_TYPE_WALL
+        shape_bottom.friction = 0.8 
+        shape_bottom.elasticity = 0.8 # 为墙壁设置弹性
+        self.space.add(body_bottom, shape_bottom)
         for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness):
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
             wall.center_x = x_coord + current_wall_thickness / 2
             wall.center_y = GAME_AREA_BOTTOM_Y + current_wall_thickness / 2 # 确保与Pymunk形状对齐
             self.wall_list.append(wall)
         # 顶部
-        body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        shape = pymunk.Segment(body, (0, GAME_AREA_TOP_Y), (SCREEN_WIDTH, GAME_AREA_TOP_Y), current_wall_thickness / 2)
-        self.space.add(body, shape)
+        body_top = pymunk.Body(body_type=pymunk.Body.STATIC)
+        shape_top = pymunk.Segment(body_top, (0, GAME_AREA_TOP_Y), (SCREEN_WIDTH, GAME_AREA_TOP_Y), current_wall_thickness / 2)
+        shape_top.collision_type = COLLISION_TYPE_WALL
+        shape_top.friction = 0.8
+        shape_top.elasticity = 0.8 # 为墙壁设置弹性
+        self.space.add(body_top, shape_top)
         for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness):
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
             wall.center_x = x_coord + current_wall_thickness / 2
             wall.center_y = GAME_AREA_TOP_Y - current_wall_thickness / 2
             self.wall_list.append(wall)
         # 左侧
-        body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        shape = pymunk.Segment(body, (0, GAME_AREA_BOTTOM_Y), (0, GAME_AREA_TOP_Y), current_wall_thickness / 2)
-        self.space.add(body, shape)
+        body_left = pymunk.Body(body_type=pymunk.Body.STATIC)
+        shape_left = pymunk.Segment(body_left, (0, GAME_AREA_BOTTOM_Y), (0, GAME_AREA_TOP_Y), current_wall_thickness / 2)
+        shape_left.collision_type = COLLISION_TYPE_WALL
+        shape_left.friction = 0.8
+        shape_left.elasticity = 0.8 # 为墙壁设置弹性
+        self.space.add(body_left, shape_left)
         for y_coord in range(int(GAME_AREA_BOTTOM_Y), int(GAME_AREA_TOP_Y + current_wall_thickness), current_wall_thickness): # 调整循环确保覆盖
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
             wall.center_x = current_wall_thickness / 2
             wall.center_y = y_coord + current_wall_thickness / 2
             self.wall_list.append(wall)
         # 右侧
-        body = pymunk.Body(body_type=pymunk.Body.STATIC)
-        shape = pymunk.Segment(body, (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_TOP_Y), current_wall_thickness / 2)
-        self.space.add(body, shape)
+        body_right = pymunk.Body(body_type=pymunk.Body.STATIC)
+        shape_right = pymunk.Segment(body_right, (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_TOP_Y), current_wall_thickness / 2)
+        shape_right.collision_type = COLLISION_TYPE_WALL
+        shape_right.friction = 0.8
+        shape_right.elasticity = 0.8 # 为墙壁设置弹性
+        self.space.add(body_right, shape_right)
         for y_coord in range(int(GAME_AREA_BOTTOM_Y), int(GAME_AREA_TOP_Y + current_wall_thickness), current_wall_thickness): # 调整循环确保覆盖
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
             wall.center_x = SCREEN_WIDTH - current_wall_thickness / 2
@@ -261,6 +358,9 @@ class GameView(arcade.View):
             body = pymunk.Body(body_type=pymunk.Body.STATIC)
             body.position = (x, y)
             shape = pymunk.Poly(body, points)
+            shape.collision_type = COLLISION_TYPE_WALL
+            shape.friction = 0.8
+            shape.elasticity = 0.8 # 为墙壁设置弹性
             self.space.add(body, shape)
         
         # UI面板背景 (可选) - 注意：这些绘制应该在 on_draw 中，setup只负责创建对象
@@ -455,84 +555,51 @@ class GameView(arcade.View):
                 if tank_sprite and hasattr(tank_sprite, 'sync_with_pymunk_body'):
                     tank_sprite.sync_with_pymunk_body()
 
+        # 同步并处理子弹 (Pymunk版)
+        bullets_to_remove_arcade = [] # 存储待移除的Arcade Sprite
+        bodies_to_remove_pymunk = []  # 存储待移除的Pymunk Body
+
         if self.bullet_list:
-            self.bullet_list.update() # 子弹的移动仍然由其自己的update方法处理
+            for bullet_sprite in self.bullet_list:
+                if bullet_sprite and hasattr(bullet_sprite, 'sync_with_pymunk_body'):
+                    bullet_sprite.sync_with_pymunk_body()
 
-        # 坦克与墙壁的碰撞检测 (现在由Pymunk处理，移除旧代码)
-        # 坦克与坦克的碰撞检测 (现在由Pymunk处理，移除旧代码)
-
-        # 移除飞出屏幕的子弹 (基于新的游戏区域)
-        if self.bullet_list:
-            for bullet in self.bullet_list:
-                if bullet.bottom > GAME_AREA_TOP_Y or \
-                   bullet.top < GAME_AREA_BOTTOM_Y or \
-                   bullet.right < 0 or \
-                   bullet.left > SCREEN_WIDTH:
-                    bullet.remove_from_sprite_lists()
-                
-                hit_walls = arcade.check_for_collision_with_list(bullet, self.wall_list)
-                if hit_walls:
-                    prev_angle = bullet.angle
-                    prev_pos = (bullet.center_x, bullet.center_y)
-                    bullet.bounce_count += 1
-                    if bullet.bounce_count >= bullet.max_bounces:
-                        print(f"Bullet {id(bullet)} removed after {bullet.bounce_count} bounces.")
-                        bullet.remove_from_sprite_lists()
-                    else:
-                        bullet_angle_rad = math.radians(bullet.angle)
-                        bullet.center_x -= -bullet.speed * math.sin(bullet_angle_rad) / 2 
-                        bullet.center_y -= bullet.speed * math.cos(bullet_angle_rad) / 2  
-                        prev_angle_rad = math.radians(prev_angle)
-                        vx = -bullet.speed * math.sin(prev_angle_rad)
-                        vy = bullet.speed * math.cos(prev_angle_rad)
-                        if abs(vx) > abs(vy):  
-                            bullet.angle = (180 - prev_angle) % 360
-                        else:  
-                            bullet.angle = (-prev_angle) % 360
-                        print(f"Bullet {id(bullet)} bounced. Pos:({prev_pos[0]:.0f},{prev_pos[1]:.0f}) Angle: {prev_angle:.1f} -> {bullet.angle:.1f}. Bounces: {bullet.bounce_count}")
-
-        # 子弹与坦克的碰撞检测
-        # 创建一个列表来存储需要移除的子弹，以避免在迭代过程中修改列表
-        bullets_to_remove_after_hit = []
-        if self.bullet_list and self.player_list:
-            for bullet in self.bullet_list:
-                if bullet in bullets_to_remove_after_hit: continue # 如果子弹已标记移除，则跳过
-
-                hit_tanks = arcade.check_for_collision_with_list(bullet, self.player_list)
-                for tank in hit_tanks:
-                    if tank and bullet.owner is not tank and tank.is_alive(): # 确保坦克对象存在且存活
-                        tank.take_damage(1)
-                        bullets_to_remove_after_hit.append(bullet) # 标记子弹以便之后移除
+                # 检查飞出屏幕的子弹 (基于Pymunk body的位置)
+                if bullet_sprite.pymunk_body:
+                    pos = bullet_sprite.pymunk_body.position
+                    if pos.y > GAME_AREA_TOP_Y + bullet_sprite.height or \
+                       pos.y < GAME_AREA_BOTTOM_Y - bullet_sprite.height or \
+                       pos.x < -bullet_sprite.width or \
+                       pos.x > SCREEN_WIDTH + bullet_sprite.width:
                         
-                        if not tank.is_alive():
-                            print(f"Tank at ({tank.center_x:.0f},{tank.center_y:.0f}) destroyed!")
-                            # 不立即从 self.player_list 移除，也不立即将 self.player_tank/player2_tank 设为 None
-                            # 仅标记回合结束，由 start_new_round 负责重置或在 GameOverView 中处理显示
-                            if not self.round_over:
-                                self.round_over = True
-                                self.round_over_timer = self.round_over_delay
-                                if tank is self.player_tank: # P1 坦克被摧毁
-                                    # self.player_tank = None # 不在此处设为None，由start_new_round处理
-                                    if self.mode == "pvp": 
-                                        self.player2_score += 1
-                                        self.round_result_text = "玩家2 本回合胜利!"
-                                        print(f"P2 scores! P1: {self.player1_score}, P2: {self.player2_score}")
-                                    # else: TODO: PVC 模式下电脑获胜，玩家输
-                                elif self.mode == "pvp" and tank is self.player2_tank: # P2 坦克被摧毁
-                                    # self.player2_tank = None # 不在此处设为None
-                                    self.player1_score += 1
-                                    self.round_result_text = "玩家1 本回合胜利!"
-                                    print(f"P1 scores! P1: {self.player1_score}, P2: {self.player2_score}")
-                        break # 一颗子弹只处理一次对坦克的击中
-                if self.round_over: break # 如果回合已结束，停止检查其他子弹
+                        bullets_to_remove_arcade.append(bullet_sprite)
+                        if bullet_sprite.pymunk_body not in bodies_to_remove_pymunk:
+                             bodies_to_remove_pymunk.append(bullet_sprite.pymunk_body)
 
-        # 移除被标记的子弹
-        for bullet in bullets_to_remove_after_hit:
-            if bullet in self.bullet_list: # 再次检查，以防万一
-                 bullet.remove_from_sprite_lists()
+            # 移除旧的Arcade子弹碰撞检测逻辑
+            # hit_walls = arcade.check_for_collision_with_list(bullet, self.wall_list) ...
+            # hit_tanks = arcade.check_for_collision_with_list(bullet, self.player_list) ...
+            
+        # 执行移除操作 (在space.step()之后进行)
+        for sprite_to_remove in self.arcade_sprites_to_remove_post_step:
+            if sprite_to_remove in self.bullet_list: # 假设只移除子弹
+                self.bullet_list.remove(sprite_to_remove)
+            # 如果也可能移除坦克，需要检查player_list
+            # elif sprite_to_remove in self.player_list:
+            #     self.player_list.remove(sprite_to_remove)
+            #     if sprite_to_remove is self.player_tank: self.player_tank = None
+            #     elif sprite_to_remove is self.player2_tank: self.player2_tank = None
+        
+        for body_to_remove in self.pymunk_bodies_to_remove_post_step:
+            if body_to_remove in self.space.bodies:
+                 self.space.remove(body_to_remove, *body_to_remove.shapes)
+        
+        self.arcade_sprites_to_remove_post_step.clear()
+        self.pymunk_bodies_to_remove_post_step.clear()
 
 
-        # 坦克与坦克的碰撞检测 (现在由Pymunk处理，移除旧代码)
+        # 子弹与坦克的碰撞伤害逻辑 (现在由Pymunk碰撞处理器处理)
+        # 坦克与坦克的碰撞检测 (现在由Pymunk处理)
         # if self.mode == "pvp" and \
         #    self.player_tank and self.player_tank.is_alive() and \
         #    self.player2_tank and self.player2_tank.is_alive():
@@ -571,10 +638,12 @@ class GameView(arcade.View):
             elif key == arcade.key.D: # 顺时针
                 body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
             elif key == arcade.key.SPACE: # 玩家1射击键
-                if self.player_tank: # Arcade Sprite 仍然用于射击逻辑
+                if self.player_tank and self.player_tank.pymunk_body: # 确保坦克和其body存在
                     bullet = self.player_tank.shoot()
                     if bullet:
                         self.bullet_list.append(bullet)
+                        if bullet.pymunk_body and bullet.pymunk_shape:
+                            self.space.add(bullet.pymunk_body, bullet.pymunk_shape)
 
         # 玩家2 (上下左右箭头) 控制 - Pymunk版
         if self.mode == "pvp" and self.player2_tank and self.player2_tank.pymunk_body:
@@ -595,10 +664,12 @@ class GameView(arcade.View):
             elif key == arcade.key.RIGHT: # 顺时针
                 body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
             elif key == arcade.key.ENTER or key == arcade.key.RSHIFT: 
-                if self.player2_tank: # Arcade Sprite 仍然用于射击逻辑
+                if self.player2_tank and self.player2_tank.pymunk_body: # 确保坦克和其body存在
                     bullet = self.player2_tank.shoot()
-                if bullet:
-                    self.bullet_list.append(bullet)
+                    if bullet: # 确保bullet不为None
+                        self.bullet_list.append(bullet)
+                        if bullet.pymunk_body and bullet.pymunk_shape:
+                            self.space.add(bullet.pymunk_body, bullet.pymunk_shape)
 
 
     def on_key_release(self, key, modifiers):
