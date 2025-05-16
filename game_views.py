@@ -6,8 +6,8 @@ from tank_sprites import (Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_MOVEMENT_SPEED, 
 
 # --- 常量 ---
 # 根据用户反馈调整窗口大小，使其更接近参考图的比例
-SCREEN_WIDTH = 760  # 例如 19个格子 * 40像素/格子
-SCREEN_HEIGHT = 600 # 例如 15个格子 * 40像素/格子
+SCREEN_WIDTH = 1280  
+SCREEN_HEIGHT = 720 
 # SCREEN_TITLE 在主程序中定义
 
 # UI 面板的高度
@@ -382,22 +382,20 @@ class GameView(arcade.View):
 
     def on_draw(self):
         self.clear()
-        self.wall_list.draw() # 绘制墙壁
+        self.wall_list.draw()
         self.player_list.draw()
-        self.bullet_list.draw() 
-        # self.enemy_list.draw()
-        # self.powerup_list.draw()
+        self.bullet_list.draw()
 
-        # UI文字绘制
+        # UI 文字绘制
         ui_text_color = arcade.color.BLACK
-        # 顶部UI
+        # 顶部 UI
         arcade.draw_text(f"模式: {self.mode.upper()}",
-                         10, SCREEN_HEIGHT - TOP_UI_PANEL_HEIGHT / 2, 
-                         ui_text_color, font_size=16, anchor_y="center")
+                         20, SCREEN_HEIGHT - TOP_UI_PANEL_HEIGHT / 2,
+                         ui_text_color, font_size=20, anchor_y="center")
         arcade.draw_text("Esc: 返回主菜单",
-                         SCREEN_WIDTH - 10, SCREEN_HEIGHT - TOP_UI_PANEL_HEIGHT / 2, 
-                         ui_text_color, font_size=16, anchor_x="right", anchor_y="center")
-        
+                         SCREEN_WIDTH - 20, SCREEN_HEIGHT - TOP_UI_PANEL_HEIGHT / 2,
+                         ui_text_color, font_size=20, anchor_x="right", anchor_y="center")
+
         # 底部UI
         # 玩家1 UI
         p1_ui_y_text = BOTTOM_UI_PANEL_HEIGHT - 15 # 文字稍高
@@ -459,27 +457,6 @@ class GameView(arcade.View):
                              anchor_x="center", anchor_y="center", bold=True)
 
 
-    def draw_health_bar(self, x, y, current_health, max_health, bar_width=100, bar_height=15, heart_size=12):
-            # 假设胜场文字大致宽度为80 (估算值，"胜场: 0" 大约4个汉字宽度 + 数字)
-            # 您可以根据实际显示效果微调这个估算宽度或固定间距
-            estimated_wins_text_width = 80 
-            health_bar_margin = 10
-            p2_health_bar_right_x = p2_wins_x - estimated_wins_text_width - health_bar_margin
-            p2_health_bar_x = p2_health_bar_right_x - 100 # bar_width 默认为100
-            
-            if self.player2_tank and self.player2_tank.is_alive():
-                self.draw_health_bar(p2_health_bar_x, p1_ui_y_bar, self.player2_tank.health, self.player2_tank.max_health)
-                
-                # P2 标识 (在血条的左边)
-                p2_label_margin = 10
-                # 假设 "P2" 标识宽度约30-40
-                estimated_p2_label_width = 40 
-                p2_label_x = p2_health_bar_x - p2_label_margin - estimated_p2_label_width / 2 # 以中心点定位
-                # 为了简单，直接给一个固定X，然后调整
-                # arcade.draw_text("P2", p2_health_bar_x - p2_label_margin - 15 , p1_ui_y_text, ui_text_color, font_size=18, anchor_x="center", anchor_y="center")
-                # 更精确的定位：
-                p2_text_x_for_label = p2_health_bar_x - p2_label_margin 
-                arcade.draw_text("P2", p2_text_x_for_label, p1_ui_y_text, ui_text_color, font_size=18, anchor_x="right", anchor_y="center")
 
 
     def draw_health_bar(self, x, y, current_health, max_health, bar_width=100, bar_height=15, heart_size=12):

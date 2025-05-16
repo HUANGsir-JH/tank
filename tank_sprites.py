@@ -4,8 +4,8 @@ import os
 import pymunk # <--- 添加Pymunk导入
 
 # --- 常量 ---
-SCREEN_WIDTH = 800 # 暂时保留，以便Tank类中的边界检查，后续可以考虑通过参数传入或从主游戏获取
-SCREEN_HEIGHT = 600 # 同上
+SCREEN_WIDTH = 1280 
+SCREEN_HEIGHT = 720 # 同上
 
 PLAYER_MOVEMENT_SPEED = 5
 PLAYER_TURN_SPEED = 5  # 度/帧

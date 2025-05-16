@@ -6,8 +6,8 @@ from game_views import MainMenu # 从 game_views.py 导入 MainMenu 视图
 # 这些常量如果只在 main.py 中使用，可以保留在这里
 # 如果 game_views.py 或 tank_sprites.py 也需要它们，最好定义在一个共享的 constants.py 文件中
 # 或者在各自文件中定义（如果它们特定于该文件）
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 720
 SCREEN_TITLE = "坦克动荡"
 
 def main():
