@@ -19,12 +19,18 @@ PLAYER_SCALE = 0.8  # 坦克图片的缩放比例
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PLAYER_IMAGE_PATH_GREEN = os.path.join(BASE_DIR, "tank-img", "tanks_tankGreen1.png")
-PLAYER_IMAGE_PATH_DESERT = os.path.join(BASE_DIR, "tank-img", "tanks_tankDesert1.png") # 示例：玩家2或敌人坦克
+PLAYER_IMAGE_PATH_DESERT = os.path.join(BASE_DIR, "tank-img", "tanks_tankDesert1.png")
+PlAYER_IMAGE_PATH_BLUE = os.path.join(BASE_DIR, "tank-img", "tanks_tankNavy1.png")
+PLAYER_IMAGE_PATH_GREY = os.path.join(BASE_DIR, "tank-img", "tanks_tankGrey1.png")
+# 示例：玩家2或敌人坦克
 
 
 class Tank(arcade.Sprite):
     """ 坦克类 """
     def __init__(self, image_file, scale, center_x, center_y, max_speed=PLAYER_MOVEMENT_SPEED, turn_speed_degrees=PLAYER_TURN_SPEED):
+        # 存储图片文件路径，供后续使用
+        self.tank_image_file = image_file
+        
         # 检查图片文件是否存在
         # os.path.exists 会相对于当前工作目录。
         # 当从 d:/VSTank/tank/ 运行 main.py 时，image_file "tank-img/tanks_tankGreen1.png" 是正确的。
@@ -35,22 +41,6 @@ class Tank(arcade.Sprite):
             # 使用 SpriteSolidColor 作为占位符
             super().__init__(None, scale) # SpriteSolidColor 不需要 filename
             self.texture = arcade.make_circle_texture(int(30 * scale), arcade.color.RED) # 临时代替，SpriteSolidColor用法不同
-            # 正确的占位符创建方式是直接实例化一个不同类型的Sprite或在父类初始化后设置颜色
-            # 为了简单，我们先用一个红色圆形纹理代替，或者在父类初始化后修改texture
-            # 更佳的方式是：
-            # super().__init__()
-            # self.texture = arcade.make_soft_square_texture(int(50*scale), arcade.color.RED, outer_alpha=255)
-            # self.scale = scale
-            # self.center_x = center_x
-            # self.center_y = center_y
-            # 然而，SpriteSolidColor 更简单:
-            # 我们将在下面正确使用 SpriteSolidColor 的逻辑
-            # 此处暂时保留一个能工作的占位符逻辑，但下面会改进
-            # 实际上，如果图片未找到，我们应该创建一个纯色精灵
-            # 我们将调整逻辑，如果图片不存在，则不调用 super().__init__(image_file, scale)
-            # 而是调用 super().__init__() 并手动设置属性或使用 SpriteSolidColor
-            # 让我们简化这个逻辑：
-            # 如果图片有效，则加载。否则，创建一个纯色精灵。
             # Arcade 的 Sprite 类在找不到文件时会抛出错误，所以我们必须先检查。
             pass # 下面会处理占位符
         else: # image_file 为 None
@@ -190,34 +180,35 @@ class Tank(arcade.Sprite):
         # 同步Sprite到Pymunk body (这一步通常在GameView的on_update中，在space.step()之后进行)
         # 但如果Tank类自己有一些基于Pymunk body的逻辑，可以在这里访问
         pass
-
-
     def sync_with_pymunk_body(self):
         """将Arcade Sprite的位置和角度同步到Pymunk Body的状态"""
         if self.pymunk_body:
             self.center_x = self.pymunk_body.position.x
             self.center_y = self.pymunk_body.position.y
-            self.angle = math.degrees(self.pymunk_body.angle) # Pymunk是弧度，Arcade是角度
-
+            self.angle = math.degrees(self.pymunk_body.angle) # Pymunk是弧度，Arcade是角度    
     def shoot(self):
-        # TODO: 实现射击逻辑
-        # arcade.Texture 对象没有 'name' 属性。
-        # 我们可以打印坦克的 image_file (如果提供了) 或者一个通用消息。
-        # 由于 image_file 可能未在 self 中存储，我们简单打印一个通用消息。
-        # print(f"Tank at ({self.center_x:.0f}, {self.center_y:.0f}) attempts to shoot with angle {self.angle:.1f}.") # 旧的打印语句
-        # 返回一个子弹对象，如果可以射击的话
-        # 子弹的发射角度 = 坦克的当前旋转角度 + 炮管相对于坦克逻辑前方的固定偏移角度
-        # 假设坦克图片的炮管本身就指向图片的某个固定方向（例如相对于图片Y轴正向的-45度）
-        # 当 tank.angle = 0 时，坦克是图片的原始朝向。
-        # 我们需要定义炮管在图片中的朝向，相对于Arcade的0度（向上）。
-        # 如果图片中炮管朝右斜上，用户建议偏移30度。
-        # 相对于Arcade的0度向上，指向屏幕右斜上30度是 -30.0 度。
+        """实现射击逻辑，返回一个子弹对象"""
         IMAGE_BARREL_DIRECTION_OFFSET = -60.0 # 炮管在图片中的固有方向（相对于Arcade的0度向上）
-        
-        # actual_bullet_angle = self.angle - IMAGE_BARREL_DIRECTION_OFFSET
         actual_bullet_angle = IMAGE_BARREL_DIRECTION_OFFSET - self.angle # 这里我们需要将炮管的方向转换为子弹的发射角度
-        # print(f"Tank angle: {self.angle:.1f}, Barrel offset: {IMAGE_BARREL_DIRECTION_OFFSET:.1f}, Bullet emission angle: {actual_bullet_angle:.1f}")
-        bullet = Bullet(owner=self, tank_center_x=self.center_x, tank_center_y=self.center_y, actual_emission_angle_degrees=actual_bullet_angle)
+        
+        # 根据坦克图片类型设置不同的子弹颜色
+        bullet_color = BULLET_COLOR  # 默认颜色
+        
+        # 使用保存的图片路径判断坦克类型
+        if hasattr(self, 'tank_image_file') and self.tank_image_file:
+            path = self.tank_image_file.lower()
+            print(f"DEBUG: Tank image path: {path}")
+            
+            if 'green' in path:
+                bullet_color = arcade.color.GREEN
+            elif 'desert' in path:
+                bullet_color = arcade.color.ORANGE
+            elif 'grey' in path:
+                bullet_color = arcade.color.GRAY
+            elif 'navy' in path:
+                bullet_color = arcade.color.BLUE
+        
+        bullet = Bullet(owner=self, tank_center_x=self.center_x, tank_center_y=self.center_y, actual_emission_angle_degrees=actual_bullet_angle, color=bullet_color)
         return bullet
 
 # --- 子弹类 ---
@@ -234,7 +225,12 @@ COLLISION_TYPE_TANK = 3 # 假设坦克用这个
 class Bullet(arcade.SpriteSolidColor):
     """ 子弹类 """
     def __init__(self, owner, tank_center_x, tank_center_y, actual_emission_angle_degrees, speed_magnitude=BULLET_SPEED, color=BULLET_COLOR):
-        super().__init__(BULLET_WIDTH, BULLET_HEIGHT, color)
+        super().__init__(BULLET_WIDTH, BULLET_HEIGHT) # 使用SolidColor创建子弹
+        self.color = color # 设置子弹颜色
+        self.center_x = tank_center_x
+        self.center_y = tank_center_y
+        self.width = BULLET_WIDTH
+        self.height = BULLET_HEIGHT
         
         self.owner = owner 
         self.angle = actual_emission_angle_degrees # Arcade Sprite的视觉角度
@@ -245,7 +241,7 @@ class Bullet(arcade.SpriteSolidColor):
         # Pymunk相关属性
         self.pymunk_body = None
         self.pymunk_shape = None
-        mass = 0.1 # 子弹质量可以很小
+        mass = 0.01 # 子弹质量可以很小
         # 子弹通常用圆形碰撞体，或者一个细长的矩形
         # 使用矩形以匹配视觉
         radius = BULLET_WIDTH / 2 # 如果用圆形
@@ -271,7 +267,7 @@ class Bullet(arcade.SpriteSolidColor):
 
         # 设置初始速度 (将 speed_magnitude 视为 像素/帧，转换为 像素/秒)
         # 假设游戏目标帧率为60 FPS
-        pymunk_initial_speed = speed_magnitude * 60 
+        pymunk_initial_speed = speed_magnitude * 90 
         vx = -pymunk_initial_speed * math.sin(self.pymunk_body.angle) 
         vy = pymunk_initial_speed * math.cos(self.pymunk_body.angle)
         self.pymunk_body.velocity = (vx, vy)
@@ -287,7 +283,7 @@ class Bullet(arcade.SpriteSolidColor):
         vertices = [(-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)]
         self.pymunk_shape = pymunk.Poly(self.pymunk_body, vertices)
         self.pymunk_shape.friction = 0.5 
-        self.pymunk_shape.elasticity = 0.9 # 子弹可以设置较高弹性用于反弹
+        self.pymunk_shape.elasticity = 0.7 # 子弹可以设置较高弹性用于反弹
         self.pymunk_shape.collision_type = COLLISION_TYPE_BULLET
         self.pymunk_body.sprite = self # 关联Sprite
 

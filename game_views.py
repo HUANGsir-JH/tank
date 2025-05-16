@@ -1,8 +1,7 @@
 import arcade
 import math 
 import pymunk 
-from tank_sprites import (Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED,
-                          COLLISION_TYPE_BULLET, COLLISION_TYPE_WALL, COLLISION_TYPE_TANK)
+from tank_sprites import (Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_IMAGE_PATH_DESERT,PlAYER_IMAGE_PATH_BLUE, PLAYER_IMAGE_PATH_GREY, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED, COLLISION_TYPE_BULLET, COLLISION_TYPE_WALL, COLLISION_TYPE_TANK)
 
 # --- 常量 ---
 # 根据用户反馈调整窗口大小，使其更接近参考图的比例
@@ -138,7 +137,7 @@ class GameView(arcade.View):
 
         bullet_sprite.bounce_count += 1
         if bullet_sprite.bounce_count >= bullet_sprite.max_bounces:
-            print(f"Bullet {id(bullet_sprite)} to be removed after {bullet_sprite.bounce_count} bounces (hit wall).")
+            # print(f"Bullet {id(bullet_sprite)} to be removed after {bullet_sprite.bounce_count} bounces (hit wall).")
             if bullet_shape.body not in self.pymunk_bodies_to_remove_post_step:
                 self.pymunk_bodies_to_remove_post_step.append(bullet_shape.body)
             if bullet_sprite not in self.arcade_sprites_to_remove_post_step:
@@ -147,8 +146,8 @@ class GameView(arcade.View):
         else:
             # Pymunk的 shape.elasticity 会处理反弹的物理效果。
             # 如果需要更精确的角度控制，可以在这里修改arbiter的restitution或surface_velocity
-            # 但通常依赖elasticity即可。我们已经在Bullet的shape上设置了elasticity=0.9
-            print(f"Bullet {id(bullet_sprite)} bounced off wall. Bounces: {bullet_sprite.bounce_count}")
+            # 但通常依赖elasticity即可。我们已经在Bullet的shape上设置了elasticity=0.7
+            # print(f"Bullet {id(bullet_sprite)} bounced off wall. Bounces: {bullet_sprite.bounce_count}")
             # Pymunk的弹性已处理反弹，这里返回True让物理引擎继续处理
             # 如果我们想手动计算反弹角度，可以在这里修改bullet_shape.body.velocity和angle
             # 但Pymunk的弹性通常更真实。
@@ -185,7 +184,7 @@ class GameView(arcade.View):
                     self.arcade_sprites_to_remove_post_step.append(bullet_sprite)
 
                 if not tank_sprite.is_alive():
-                    print(f"Tank ({tank_sprite.center_x:.0f},{tank_sprite.center_y:.0f}) destroyed by Pymunk bullet!")
+                    # print(f"Tank ({tank_sprite.center_x:.0f},{tank_sprite.center_y:.0f}) destroyed by Pymunk bullet!")
                     if not self.round_over: # 再次检查，因为伤害可能导致回合结束
                         self.round_over = True
                         self.round_over_timer = self.round_over_delay
@@ -235,12 +234,7 @@ class GameView(arcade.View):
                 self.player_tank.pymunk_body.angular_velocity = 0
             # 同步Arcade Sprite (虽然sync_with_pymunk_body会在on_update调用，但这里立即同步更清晰)
             self.player_tank.sync_with_pymunk_body() 
-            # 旧的Sprite属性设置可以移除，因为sync会处理
-            # self.player_tank.center_x = p1_start_x 
-            # self.player_tank.center_y = p1_start_y
-            # self.player_tank.angle = 0
-            # self.player_tank.speed = 0 # 此属性已不再由Pymunk直接使用
-            # self.player_tank.angle_speed = 0 # 此属性已不再由Pymunk直接使用
+            
         
         # 重置/创建 玩家2 坦克 (仅PVP)
         if self.mode == "pvp":
@@ -252,7 +246,6 @@ class GameView(arcade.View):
                     self.player2_tank = None
 
             if not self.player2_tank:
-                from tank_sprites import PLAYER_IMAGE_PATH_DESERT
                 self.player2_tank = Tank(PLAYER_IMAGE_PATH_DESERT, NEW_PLAYER_SCALE, p2_start_x, p2_start_y)
                 if self.player_list is None: self.player_list = arcade.SpriteList() # 确保player_list存在
                 self.player_list.append(self.player2_tank)
@@ -457,8 +450,6 @@ class GameView(arcade.View):
                              anchor_x="center", anchor_y="center", bold=True)
 
 
-
-
     def draw_health_bar(self, x, y, current_health, max_health, bar_width=100, bar_height=15, heart_size=12):
         """绘制血条，用小方块代表血量"""
         # border_color = arcade.color.BLACK
@@ -512,14 +503,6 @@ class GameView(arcade.View):
 
         # 更新物理空间
         self.space.step(delta_time)
-
-        # 坦克移动前记录位置的逻辑不再需要，Pymunk会处理碰撞回退
-        # if self.player_list:
-        #     for player_obj in self.player_list:
-        #         if player_obj: 
-        #             player_obj.original_center_x = player_obj.center_x
-        #             player_obj.original_center_y = player_obj.center_y
-        #             player_obj.original_angle = player_obj.angle
 
         # Arcade SpriteList的 .update() 仍然需要调用，以便执行Sprite自己的update（如果有的话）
         # 但坦克的移动现在由Pymunk控制，所以Tank.update()方法已变为空或只做同步。
