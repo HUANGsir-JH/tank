@@ -1,7 +1,7 @@
 import arcade
 import math 
 import pymunk 
-from tank_sprites import (Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_IMAGE_PATH_DESERT,PlAYER_IMAGE_PATH_BLUE, PLAYER_IMAGE_PATH_GREY, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED, COLLISION_TYPE_BULLET, COLLISION_TYPE_WALL, COLLISION_TYPE_TANK)
+from tank_sprites import (Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_IMAGE_PATH_DESERT,PLAYER_IMAGE_PATH_BLUE, PLAYER_IMAGE_PATH_GREY, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED, COLLISION_TYPE_BULLET, COLLISION_TYPE_WALL, COLLISION_TYPE_TANK)
 
 # --- 常量 ---
 # 根据用户反馈调整窗口大小，使其更接近参考图的比例
@@ -80,20 +80,24 @@ class ModeSelectView(arcade.View):
         elif key == arcade.key.KEY_1:
             print("选择了 玩家 vs 电脑 模式")
             game_view = GameView(mode="pvc")
-            self.window.show_view(game_view)
+            self.window.show_view(game_view)        
         elif key == arcade.key.KEY_2:
             print("选择了 双人对战 模式")
-            game_view = GameView(mode="pvp")
-            self.window.show_view(game_view)
+            # 进入坦克选择页面
+            from tank_selection import TankSelectionView
+            tank_selection_view = TankSelectionView()
+            self.window.show_view(tank_selection_view)
         elif key == arcade.key.KEY_3:
             print("选择了 多人联机 模式 (未实现)")
 
 
 class GameView(arcade.View):
     """ 游戏主视图 """
-    def __init__(self, mode="pvc"):
+    def __init__(self, mode="pvc", player1_tank_image=PLAYER_IMAGE_PATH_GREEN, player2_tank_image=PLAYER_IMAGE_PATH_DESERT):
         super().__init__()
         self.mode = mode
+        self.player1_tank_image = player1_tank_image  # 玩家1选择的坦克图片
+        self.player2_tank_image = player2_tank_image  # 玩家2选择的坦克图片
         self.player_tank = None # 玩家1
         self.player2_tank = None # 玩家2
         self.player_list = None # 包含所有玩家坦克
@@ -207,24 +211,30 @@ class GameView(arcade.View):
         if self.bullet_list: # 确保bullet_list已初始化
             self.bullet_list.clear() # 清空所有子弹
         else:
-            self.bullet_list = arcade.SpriteList()
-
-        # 重置/创建 玩家1 坦克
+            self.bullet_list = arcade.SpriteList()        # 重置/创建 玩家1 坦克
         p1_start_x = WALL_THICKNESS * 3 
         p1_start_y = GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT / 2
-        if self.player_tank and self.player_tank in self.player_list: # 检查坦克是否仍在列表中
-             # 如果坦克只是被标记为None但仍在列表中，先移除
-            if not self.player_tank.is_alive() and self.player_tank in self.player_list:
-                 self.player_list.remove(self.player_tank)
-                 self.player_tank = None # 确保设为None
         
-        if not self.player_tank: # 如果坦克对象不存在了（例如上一局被设为None后从列表移除）
-            self.player_tank = Tank(PLAYER_IMAGE_PATH_GREEN, NEW_PLAYER_SCALE, p1_start_x, p1_start_y)
-            if self.player_list is None: self.player_list = arcade.SpriteList() # 确保player_list存在
+        # 确保player_list存在
+        if self.player_list is None:
+            self.player_list = arcade.SpriteList()
+            
+        # 检查坦克是否存在且是否在列表中
+        if self.player_tank and self.player_tank in self.player_list:
+            # 如果坦克死亡，从列表中移除
+            if not self.player_tank.is_alive():
+                self.player_list.remove(self.player_tank)
+                self.player_tank = None
+        
+        # 如果坦克不存在，创建新的
+        if not self.player_tank:
+            self.player_tank = Tank(self.player1_tank_image, NEW_PLAYER_SCALE, p1_start_x, p1_start_y)
             self.player_list.append(self.player_tank)
-            if self.player_tank.pymunk_body and self.player_tank.pymunk_shape: # 添加到Pymunk空间
+            # 添加到Pymunk空间
+            if self.player_tank.pymunk_body and self.player_tank.pymunk_shape:
                 self.space.add(self.player_tank.pymunk_body, self.player_tank.pymunk_shape)
-        else: # 如果坦克对象还在，只是重置状态
+        else:
+            # 坦克存在，重置状态
             self.player_tank.health = self.player_tank.max_health
             # 重置Pymunk body的状态
             if self.player_tank.pymunk_body:
@@ -232,32 +242,38 @@ class GameView(arcade.View):
                 self.player_tank.pymunk_body.angle = 0  # Pymunk角度是弧度
                 self.player_tank.pymunk_body.velocity = (0, 0)
                 self.player_tank.pymunk_body.angular_velocity = 0
-            # 同步Arcade Sprite (虽然sync_with_pymunk_body会在on_update调用，但这里立即同步更清晰)
-            self.player_tank.sync_with_pymunk_body() 
+            # 同步Arcade Sprite
+            self.player_tank.sync_with_pymunk_body()
             
-        
-        # 重置/创建 玩家2 坦克 (仅PVP)
+          # 重置/创建 玩家2 坦克 (仅PVP)
         if self.mode == "pvp":
             p2_start_x = SCREEN_WIDTH - (WALL_THICKNESS * 3)
             p2_start_y = GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT / 2
+            
+            # 检查坦克是否存在且是否在列表中
             if self.player2_tank and self.player2_tank in self.player_list:
-                if not self.player2_tank.is_alive() and self.player2_tank in self.player_list:
+                # 如果坦克死亡，从列表中移除
+                if not self.player2_tank.is_alive():
                     self.player_list.remove(self.player2_tank)
                     self.player2_tank = None
-
+                    
+            # 如果坦克不存在，创建新的
             if not self.player2_tank:
-                self.player2_tank = Tank(PLAYER_IMAGE_PATH_DESERT, NEW_PLAYER_SCALE, p2_start_x, p2_start_y)
-                if self.player_list is None: self.player_list = arcade.SpriteList() # 确保player_list存在
+                self.player2_tank = Tank(self.player2_tank_image, NEW_PLAYER_SCALE, p2_start_x, p2_start_y)
                 self.player_list.append(self.player2_tank)
-                if self.player2_tank.pymunk_body and self.player2_tank.pymunk_shape: # 添加到Pymunk空间
+                # 添加到Pymunk空间
+                if self.player2_tank.pymunk_body and self.player2_tank.pymunk_shape:
                     self.space.add(self.player2_tank.pymunk_body, self.player2_tank.pymunk_shape)
             else:
+                # 坦克存在，重置状态
                 self.player2_tank.health = self.player2_tank.max_health
+                # 重置Pymunk body的状态
                 if self.player2_tank.pymunk_body:
                     self.player2_tank.pymunk_body.position = p2_start_x, p2_start_y
                     self.player2_tank.pymunk_body.angle = 0
                     self.player2_tank.pymunk_body.velocity = (0, 0)
                     self.player2_tank.pymunk_body.angular_velocity = 0
+                # 同步Arcade Sprite
                 self.player2_tank.sync_with_pymunk_body()
         
         # 确保player_list是最新的 (如果坦克是重新创建的)
@@ -487,14 +503,24 @@ class GameView(arcade.View):
         if self.round_over:
             self.round_over_timer -= delta_time
             if self.round_over_timer <= 0:
-                print(f"DEBUG: Round over timer ended. P1 Score: {self.player1_score}, P2 Score: {self.player2_score}, Max Score: {self.max_score}")
+                print(f"DEBUG: Round over timer ended. P1 Score: {self.player1_score}, P2 Score: {self.player2_score}, Max Score: {self.max_score}")                
                 if self.player1_score >= self.max_score:
                     print("DEBUG: Player 1 wins the game! Showing GameOverView.")
-                    game_over_view = GameOverView(f"玩家1 最终胜利!", self.mode)
+                    game_over_view = GameOverView(
+                        f"玩家1 最终胜利!", 
+                        self.mode,
+                        self.player1_tank_image,
+                        self.player2_tank_image
+                    )
                     self.window.show_view(game_over_view)
                 elif self.mode == "pvp" and self.player2_score >= self.max_score:
                     print("DEBUG: Player 2 wins the game! Showing GameOverView.")
-                    game_over_view = GameOverView(f"玩家2 最终胜利!", self.mode)
+                    game_over_view = GameOverView(
+                        f"玩家2 最终胜利!", 
+                        self.mode,
+                        self.player1_tank_image,
+                        self.player2_tank_image
+                    )
                     self.window.show_view(game_over_view)
                 else:
                     print("DEBUG: No winner yet, starting new round.")
@@ -651,10 +677,12 @@ class GameView(arcade.View):
 
 class GameOverView(arcade.View):
     """ 游戏结束视图 """
-    def __init__(self, result, last_mode="pvc"): # 添加last_mode以正确重新开始
+    def __init__(self, result, last_mode="pvc", player1_tank_image=PLAYER_IMAGE_PATH_GREEN, player2_tank_image=PLAYER_IMAGE_PATH_DESERT): # 添加坦克图片参数
         super().__init__()
         self.result = result
         self.last_mode = last_mode
+        self.player1_tank_image = player1_tank_image
+        self.player2_tank_image = player2_tank_image
 
     def on_show_view(self):
         arcade.set_background_color(arcade.color.BLACK_OLIVE)
@@ -666,11 +694,21 @@ class GameOverView(arcade.View):
         arcade.draw_text("按 R 重新开始", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50,
                          arcade.color.WHITE, font_size=20, anchor_x="center")
         arcade.draw_text("按 Q 退出", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100,
-                         arcade.color.WHITE, font_size=20, anchor_x="center")
-
+                         arcade.color.WHITE, font_size=20, anchor_x="center")    
     def on_key_press(self, key, modifiers):
         if key == arcade.key.R:
-            game_view = GameView(mode=self.last_mode) # 使用上一次的游戏模式
-            self.window.show_view(game_view)
+            if self.last_mode == "pvp":
+                # 如果是PVP模式，返回坦克选择页面
+                from tank_selection import TankSelectionView
+                tank_selection_view = TankSelectionView()
+                self.window.show_view(tank_selection_view)
+            else:
+                # 其他模式直接重新开始
+                game_view = GameView(
+                    mode=self.last_mode,
+                    player1_tank_image=self.player1_tank_image,
+                    player2_tank_image=self.player2_tank_image
+                ) 
+                self.window.show_view(game_view)
         elif key == arcade.key.Q:
             arcade.exit()

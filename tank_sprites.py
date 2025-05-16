@@ -20,9 +20,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 PLAYER_IMAGE_PATH_GREEN = os.path.join(BASE_DIR, "tank-img", "tanks_tankGreen1.png")
 PLAYER_IMAGE_PATH_DESERT = os.path.join(BASE_DIR, "tank-img", "tanks_tankDesert1.png")
-PlAYER_IMAGE_PATH_BLUE = os.path.join(BASE_DIR, "tank-img", "tanks_tankNavy1.png")
+PLAYER_IMAGE_PATH_BLUE = os.path.join(BASE_DIR, "tank-img", "tanks_tankNavy1.png")
 PLAYER_IMAGE_PATH_GREY = os.path.join(BASE_DIR, "tank-img", "tanks_tankGrey1.png")
-# 示例：玩家2或敌人坦克
 
 
 class Tank(arcade.Sprite):
@@ -192,23 +191,32 @@ class Tank(arcade.Sprite):
         actual_bullet_angle = IMAGE_BARREL_DIRECTION_OFFSET - self.angle # 这里我们需要将炮管的方向转换为子弹的发射角度
         
         # 根据坦克图片类型设置不同的子弹颜色
-        bullet_color = BULLET_COLOR  # 默认颜色
+        bullet_color = arcade.color.YELLOW_ORANGE  # 默认颜色
         
         # 使用保存的图片路径判断坦克类型
         if hasattr(self, 'tank_image_file') and self.tank_image_file:
             path = self.tank_image_file.lower()
-            print(f"DEBUG: Tank image path: {path}")
+            # print(f"DEBUG: Tank image path: {path}")
             
             if 'green' in path:
-                bullet_color = arcade.color.GREEN
+                bullet_color = (0, 255, 0)  # 纯绿色
+                # print(f"DEBUG: 使用绿色子弹")
             elif 'desert' in path:
-                bullet_color = arcade.color.ORANGE
+                bullet_color = (255, 165, 0)  # 橙色
+                # print(f"DEBUG: 使用橙色子弹")
             elif 'grey' in path:
-                bullet_color = arcade.color.GRAY
+                bullet_color = (128, 128, 128)  # 灰色
+                # print(f"DEBUG: 使用灰色子弹")
             elif 'navy' in path:
-                bullet_color = arcade.color.BLUE
+                bullet_color = (0, 0, 128)  # 深蓝色
+                # print(f"DEBUG: 使用深蓝色子弹")
+            else:
+                # print(f"DEBUG: 未匹配到任何颜色关键词，使用默认颜色")
+                pass
         
-        bullet = Bullet(owner=self, tank_center_x=self.center_x, tank_center_y=self.center_y, actual_emission_angle_degrees=actual_bullet_angle, color=bullet_color)
+        
+        bullet = Bullet(owner=self, tank_center_x=self.center_x, tank_center_y=self.center_y, 
+                       actual_emission_angle_degrees=actual_bullet_angle, color=bullet_color)
         return bullet
 
 # --- 子弹类 ---
