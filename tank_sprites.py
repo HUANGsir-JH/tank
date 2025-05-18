@@ -108,11 +108,11 @@ class Tank(arcade.Sprite):
 
         self.pymunk_shape = pymunk.Poly(self.pymunk_body, vertices)
         self.pymunk_shape.elasticity = 0.01 
-        self.pymunk_shape.friction = 0.9   
+        self.pymunk_shape.friction = 1   # 1表示高摩擦力
         self.pymunk_shape.collision_type = COLLISION_TYPE_TANK 
 
-        self.pymunk_body.damping = 0.01 
-        self.pymunk_body.angular_damping = 0.01 
+        self.pymunk_body.damping = 0.6 # 线性阻尼，越大越快停止移动
+        self.pymunk_body.angular_damping = 0.6 # 角阻尼，越大越快停止旋转
         self.pymunk_body.sprite = self
 
     def take_damage(self, amount):
@@ -190,7 +190,7 @@ class Bullet(arcade.SpriteCircle):
         self.pymunk_body = pymunk.Body(mass, moment)
         # 为子弹启用连续碰撞检测 (CCD)
         # 将阈值设置为子弹的实际速度大小，确保CCD始终启用
-        self.pymunk_body.linear_velocity_threshold = speed_magnitude * 120 
+        self.pymunk_body.linear_velocity_threshold = 0.1
 
         barrel_offset = 25 * PLAYER_SCALE 
         emission_angle_rad = math.radians(actual_emission_angle_degrees)
@@ -208,7 +208,7 @@ class Bullet(arcade.SpriteCircle):
         self.pymunk_body.damping = 1.0 
 
         self.pymunk_shape = pymunk.Circle(self.pymunk_body, self.radius, (0,0))
-        self.pymunk_shape.friction = 0.5 
+        self.pymunk_shape.friction = 0.1 # 0.1表示低摩擦力 
         self.pymunk_shape.elasticity = 0.5 
         self.pymunk_shape.collision_type = COLLISION_TYPE_BULLET
         self.pymunk_body.sprite = self 
