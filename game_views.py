@@ -112,7 +112,8 @@ class GameView(arcade.View):
         # Pymunk物理空间
         self.space = pymunk.Space()
         self.space.gravity = (0, 0) 
-        self.space.damping = 0.8    
+        self.space.damping = 0.8  
+        # 物理空间的阻尼，模拟空气阻力，damping越大，物体运动越慢
         
         # 用于在碰撞回调后安全移除Pymunk body和Arcade sprite
         self.pymunk_bodies_to_remove_post_step = []
@@ -137,7 +138,6 @@ class GameView(arcade.View):
 
         bullet_sprite.bounce_count += 1
         if bullet_sprite.bounce_count >= bullet_sprite.max_bounces:
-            # print(f"Bullet {id(bullet_sprite)} to be removed after {bullet_sprite.bounce_count} bounces (hit wall).")
             if bullet_shape.body not in self.pymunk_bodies_to_remove_post_step:
                 self.pymunk_bodies_to_remove_post_step.append(bullet_shape.body)
             if bullet_sprite not in self.arcade_sprites_to_remove_post_step:
