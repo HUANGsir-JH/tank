@@ -1,7 +1,8 @@
 import arcade
-import math 
-import pymunk 
+import math
+import pymunk
 from tank_sprites import (Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_IMAGE_PATH_DESERT,PLAYER_IMAGE_PATH_BLUE, PLAYER_IMAGE_PATH_GREY, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED, COLLISION_TYPE_BULLET, COLLISION_TYPE_WALL, COLLISION_TYPE_TANK)
+from maps import get_random_map_layout # <--- 修改导入路径
 
 # --- 常量 ---
 # 根据用户反馈调整窗口大小，使其更接近参考图的比例
@@ -343,35 +344,27 @@ class GameView(arcade.View):
             wall.center_y = y_coord + current_wall_thickness / 2
             self.wall_list.append(wall)
 
-        # 示例内部墙壁 - 确保Y坐标在GAME_AREA内
-        # (center_x, center_y, width, height)
-        maze_walls_data = [
-            (SCREEN_WIDTH * 0.3, GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT / 2, current_wall_thickness, GAME_AREA_HEIGHT * 0.4), 
-            (SCREEN_WIDTH * 0.7, GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT / 2, current_wall_thickness, GAME_AREA_HEIGHT * 0.4), 
-            (SCREEN_WIDTH / 2, GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT * 0.3, SCREEN_WIDTH * 0.3, current_wall_thickness),   
-            (SCREEN_WIDTH / 2, GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT * 0.7, SCREEN_WIDTH * 0.3, current_wall_thickness),   
-        ]
-        for x, y, w, h in maze_walls_data:
+        # --- 创建随机选择的内部地图墙壁 ---
+        selected_map_layout = get_random_map_layout()
+        for cx, cy, w, h in selected_map_layout:
+            # 创建 Arcade Sprite
             wall_sprite = arcade.SpriteSolidColor(int(w), int(h), wall_color)
-            wall_sprite.center_x = int(x)
-            wall_sprite.center_y = int(y)
+            wall_sprite.center_x = int(cx)
+            wall_sprite.center_y = int(cy)
             self.wall_list.append(wall_sprite)
-            
-            # 创建对应的Pymunk静态形状
-            # Pymunk Poly的顶点是相对于body的重心的，对于静态物体，重心就是position
-            # 我们将body的position设为(0,0)，然后用绝对坐标定义Poly的顶点
-            # 或者，更简单的是，将body的position设为sprite的center_x, center_y，然后Poly的顶点相对于这个中心
+
+            # 创建 Pymunk 静态形状
             half_w = w / 2
             half_h = h / 2
             points = [(-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)]
             body = pymunk.Body(body_type=pymunk.Body.STATIC)
-            body.position = (x, y)
+            body.position = (cx, cy) # Pymunk body的position是形状的重心
             shape = pymunk.Poly(body, points)
             shape.collision_type = COLLISION_TYPE_WALL
-            shape.friction = 0.8
-            shape.elasticity = 0.8 # 为墙壁设置弹性
+            shape.friction = 0.8    # 与边界墙壁一致
+            shape.elasticity = 0.8  # 与边界墙壁一致
             self.space.add(body, shape)
-        
+
         # UI面板背景 (可选) - 注意：这些绘制应该在 on_draw 中，setup只负责创建对象
         # 我将暂时注释掉这里的绘制，UI面板的视觉效果可以在on_draw中实现
         # # 顶部UI面板
