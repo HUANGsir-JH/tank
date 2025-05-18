@@ -58,6 +58,10 @@ class Tank(arcade.Sprite):
         self.health = 5 
         self.max_health = 5
 
+        # 射击冷却时间属性
+        self.last_shot_time = 0.0 # 上次射击的时间
+        self.shot_cooldown = 0.2 # 射击冷却时间 (秒)
+
         self.pymunk_body = None
         self.pymunk_shape = None
         mass = 10 
@@ -129,7 +133,14 @@ class Tank(arcade.Sprite):
             self.center_y = self.pymunk_body.position.y
             self.angle = math.degrees(self.pymunk_body.angle) 
               
-    def shoot(self):
+    def shoot(self, current_time): # 接收当前时间参数
+        # 检查射击冷却时间
+        if current_time - self.last_shot_time < self.shot_cooldown:
+            return None # 未冷却，不射击
+
+        # 更新上次射击时间
+        self.last_shot_time = current_time
+
         IMAGE_BARREL_DIRECTION_OFFSET = -60.0 
         actual_bullet_angle = IMAGE_BARREL_DIRECTION_OFFSET - self.angle 
         
@@ -143,30 +154,26 @@ class Tank(arcade.Sprite):
             elif 'navy' in path: bullet_color = (0, 0, 128)
         
         # 定义子弹半径和速度
-        BULLET_RADIUS = 4 # 将半径改回4 (或您期望的其他值)
-        BULLET_SPEED_MAGNITUDE = 12 # 保持原来的速度值
+        BULLET_RADIUS = 4 
+        BULLET_SPEED_MAGNITUDE = 12 
 
-        bullet = Bullet(radius=BULLET_RADIUS, # 传递半径
+        bullet = Bullet(radius=BULLET_RADIUS, 
                        owner=self, 
                        tank_center_x=self.center_x, 
                        tank_center_y=self.center_y, 
                        actual_emission_angle_degrees=actual_bullet_angle, 
-                       speed_magnitude=BULLET_SPEED_MAGNITUDE, # 明确传递速度大小
+                       speed_magnitude=BULLET_SPEED_MAGNITUDE, 
                        color=bullet_color)
         return bullet
 
 # --- 子弹类 ---
-# BULLET_SPEED, BULLET_WIDTH, BULLET_HEIGHT, BULLET_COLOR 这些全局常量不再直接被Bullet类使用
-# 它们现在通过参数传递或在Tank.shoot中定义
-
-class Bullet(arcade.SpriteCircle): # 改为继承 SpriteCircle
+class Bullet(arcade.SpriteCircle): 
     """ 子弹类 """
     def __init__(self, radius, owner, tank_center_x, tank_center_y, actual_emission_angle_degrees, speed_magnitude, color):
-        super().__init__(radius, color) # 使用半径和颜色初始化 SpriteCircle
-        self.radius = radius # 保存半径
-        # self.color = color # SpriteCircle的构造函数已处理颜色
+        super().__init__(radius, color) 
+        self.radius = radius 
         
-        self.center_x = tank_center_x # 初始位置会基于炮口重新计算
+        self.center_x = tank_center_x 
         self.center_y = tank_center_y
         
         self.owner = owner 
@@ -178,11 +185,13 @@ class Bullet(arcade.SpriteCircle): # 改为继承 SpriteCircle
         self.pymunk_shape = None
         mass = 0.001 
         
-        # 使用圆形计算转动惯量
         moment = pymunk.moment_for_circle(mass, 0, self.radius, (0,0)) 
         
         self.pymunk_body = pymunk.Body(mass, moment)
-        
+        # 为子弹启用连续碰撞检测 (CCD)
+        # 将阈值设置为子弹的实际速度大小，确保CCD始终启用
+        self.pymunk_body.linear_velocity_threshold = speed_magnitude * 120 
+
         barrel_offset = 25 * PLAYER_SCALE 
         emission_angle_rad = math.radians(actual_emission_angle_degrees)
         
@@ -198,10 +207,9 @@ class Bullet(arcade.SpriteCircle): # 改为继承 SpriteCircle
         self.pymunk_body.velocity = (vx, vy)
         self.pymunk_body.damping = 1.0 
 
-        # 创建Pymunk圆形形状
         self.pymunk_shape = pymunk.Circle(self.pymunk_body, self.radius, (0,0))
         self.pymunk_shape.friction = 0.5 
-        self.pymunk_shape.elasticity = 0.9 
+        self.pymunk_shape.elasticity = 0.5 
         self.pymunk_shape.collision_type = COLLISION_TYPE_BULLET
         self.pymunk_body.sprite = self 
 
@@ -214,4 +222,4 @@ class Bullet(arcade.SpriteCircle): # 改为继承 SpriteCircle
         if self.pymunk_body:
             self.center_x = self.pymunk_body.position.x
             self.center_y = self.pymunk_body.position.y
-            self.angle = math.degrees(self.pymunk_body.angle) # SpriteCircle通常不旋转，但保持同步无害
+            self.angle = math.degrees(self.pymunk_body.angle)

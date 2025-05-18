@@ -119,6 +119,9 @@ class GameView(arcade.View):
         self.pymunk_bodies_to_remove_post_step = []
         self.arcade_sprites_to_remove_post_step = []
 
+        # 游戏总运行时间，用于射击冷却
+        self.total_time = 0.0
+
         self._setup_collision_handlers()
 
     def _setup_collision_handlers(self):
@@ -488,6 +491,9 @@ class GameView(arcade.View):
     def on_update(self, delta_time):
         """ 游戏逻辑更新 """
 
+        # 累积游戏总时间
+        self.total_time += delta_time
+
         if self.round_over:
             self.round_over_timer -= delta_time
             if self.round_over_timer <= 0:
@@ -618,8 +624,9 @@ class GameView(arcade.View):
                 body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
             elif key == arcade.key.SPACE: # 玩家1射击键
                 if self.player_tank and self.player_tank.pymunk_body: # 确保坦克和其body存在
-                    bullet = self.player_tank.shoot()
-                    if bullet:
+                    # 调用shoot方法并传递当前时间
+                    bullet = self.player_tank.shoot(self.total_time)
+                    if bullet: # 只有当shoot返回子弹时才添加
                         self.bullet_list.append(bullet)
                         if bullet.pymunk_body and bullet.pymunk_shape:
                             self.space.add(bullet.pymunk_body, bullet.pymunk_shape)
@@ -644,8 +651,9 @@ class GameView(arcade.View):
                 body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
             elif key == arcade.key.ENTER or key == arcade.key.RSHIFT: 
                 if self.player2_tank and self.player2_tank.pymunk_body: # 确保坦克和其body存在
-                    bullet = self.player2_tank.shoot()
-                    if bullet: # 确保bullet不为None
+                    # 调用shoot方法并传递当前时间
+                    bullet = self.player2_tank.shoot(self.total_time)
+                    if bullet: # 只有当shoot返回子弹时才添加
                         self.bullet_list.append(bullet)
                         if bullet.pymunk_body and bullet.pymunk_shape:
                             self.space.add(bullet.pymunk_body, bullet.pymunk_shape)
