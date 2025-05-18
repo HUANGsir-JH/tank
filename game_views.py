@@ -40,11 +40,6 @@ class MainMenu(arcade.View):
         arcade.draw_text("按 Q 退出", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50, #调整位置
                             arcade.color.WHITE, font_size=20, anchor_x="center")
 
-    # 移除 on_mouse_press 方法，彻底取消点击开始游戏
-    # def on_mouse_press(self, _x, _y, _button, _modifiers):
-    #     """ 当鼠标点击时, 默认进入玩家vs电脑模式 """
-    #     game_view = GameView(mode="pvc") # 默认模式
-    #     self.window.show_view(game_view)
 
     def on_key_press(self, key, modifiers):
         if key == arcade.key.Q:
