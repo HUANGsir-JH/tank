@@ -516,7 +516,12 @@ class GameView(arcade.View):
             return 
 
         # 更新物理空间
-        self.space.step(delta_time)
+        # self.space.step(delta_time)
+        
+        delta_time = min(delta_time, 1.0 / 20.0) # 限制最大步长为1/20秒
+        for _ in range(20): # 20次小步长更新
+            self.space.step(delta_time / 20.0) # 每次更新1/20秒
+
 
         # Arcade SpriteList的 .update() 仍然需要调用，以便执行Sprite自己的update（如果有的话）
         # 但坦克的移动现在由Pymunk控制，所以Tank.update()方法已变为空或只做同步。
