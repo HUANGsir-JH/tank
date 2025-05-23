@@ -11,17 +11,19 @@ PLAYER_MOVEMENT_SPEED = 5
 PLAYER_TURN_SPEED = 5  # 度/帧
 PLAYER_SCALE = 0.8  # 坦克图片的缩放比例
 
-# 坦克图片路径 - 注意：这个路径是相对于调用此模块的文件的，或者使用绝对路径/更灵活的资源管理
-# 为了简单起见，我们假设图片在相对于项目根目录的 tank-img 文件夹下
-# 在 main.py 中导入时，需要确保路径的正确性
 
 # 获取 tank_sprites.py 文件所在的目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-PLAYER_IMAGE_PATH_GREEN = os.path.join(BASE_DIR, "tank-img", "tanks_tankGreen1.png")
-PLAYER_IMAGE_PATH_DESERT = os.path.join(BASE_DIR, "tank-img", "tanks_tankDesert1.png")
-PLAYER_IMAGE_PATH_BLUE = os.path.join(BASE_DIR, "tank-img", "tanks_tankNavy1.png")
-PLAYER_IMAGE_PATH_GREY = os.path.join(BASE_DIR, "tank-img", "tanks_tankGrey1.png")
+# PLAYER_IMAGE_PATH_GREEN = os.path.join(BASE_DIR, "tank-img", "tanks_tankGreen1.png")
+# PLAYER_IMAGE_PATH_DESERT = os.path.join(BASE_DIR, "tank-img", "tanks_tankDesert1.png")
+# PLAYER_IMAGE_PATH_BLUE = os.path.join(BASE_DIR, "tank-img", "tanks_tankNavy1.png")
+# PLAYER_IMAGE_PATH_GREY = os.path.join(BASE_DIR, "tank-img", "tanks_tankGrey1.png")
+
+PLAYER_IMAGE_PATH_GREEN = os.path.join(BASE_DIR, "tank-img", "green_tank.png")
+PLAYER_IMAGE_PATH_DESERT = os.path.join(BASE_DIR, "tank-img", "yellow_tank.png")
+PLAYER_IMAGE_PATH_BLUE = os.path.join(BASE_DIR, "tank-img", "blue_tank.png")
+PLAYER_IMAGE_PATH_GREY = os.path.join(BASE_DIR, "tank-img", "grey_tank.png")
 
 # Pymunk碰撞类型常量
 COLLISION_TYPE_BULLET = 1
@@ -80,9 +82,6 @@ class Tank(arcade.Sprite):
             unscaled_width = int(50) 
             unscaled_height = int(60)
 
-        # print(f"DEBUG Tank Init: unscaled_width type: {type(unscaled_width)}, value: {unscaled_width}")
-        # print(f"DEBUG Tank Init: unscaled_height type: {type(unscaled_height)}, value: {unscaled_height}")
-        # print(f"DEBUG Tank Init: self.scale type: {type(self.scale)}, value: {self.scale}")
 
         try:
             calc_unscaled_width = float(unscaled_width[0] if isinstance(unscaled_width, tuple) else unscaled_width)
@@ -96,20 +95,37 @@ class Tank(arcade.Sprite):
         if isinstance(self.scale, tuple):
             current_scale_for_pymunk = self.scale[0]
             
-        half_w = calc_unscaled_width * current_scale_for_pymunk / 2
-        half_h = calc_unscaled_height * current_scale_for_pymunk / 2 
+        # 再次微调Pymunk形状的尺寸，使其略小于缩放后的图片尺寸，以更精确地贴合坦克主体
+        # 尝试将尺寸缩小到缩放后图片尺寸的90%
+        # 再次微调Pymunk形状的尺寸，使其略小于缩放后的图片尺寸，以更精确地贴合坦克主体
+        # 尝试将尺寸缩小到缩放后图片尺寸的80%
+        # 坦克的视觉宽度对应图片的宽度 (calc_unscaled_width)
+        # 坦克的视觉高度对应图片的高度 (calc_unscaled_height)
+
+        # Pymunk形状的局部X轴尺寸 (对应视觉高度)
+        half_x_dim_for_pymunk_shape = (calc_unscaled_height * current_scale_for_pymunk ) / 2
+        # Pymunk形状的局部Y轴尺寸 (对应视觉宽度)
+        half_y_dim_for_pymunk_shape = (calc_unscaled_width * current_scale_for_pymunk ) / 2
         
-        vertices = [(-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)]
+        # Pymunk的Poly形状顶点定义，对调尺寸以匹配视觉方向
+        vertices = [(-half_x_dim_for_pymunk_shape, -half_y_dim_for_pymunk_shape), 
+                    (half_x_dim_for_pymunk_shape, -half_y_dim_for_pymunk_shape), 
+                    (half_x_dim_for_pymunk_shape, half_y_dim_for_pymunk_shape), 
+                    (-half_x_dim_for_pymunk_shape, half_y_dim_for_pymunk_shape)]
         moment = pymunk.moment_for_poly(mass, vertices) 
 
         self.pymunk_body = pymunk.Body(mass, moment)
         self.pymunk_body.position = center_x, center_y
-        self.pymunk_body.angle = math.radians(self.angle) 
+        # 将Arcade的0度（向上）转换为Pymunk的math.pi/2（向上）
+        self.pymunk_body.angle = math.radians(90 - self.angle) 
+        # 为坦克启用连续碰撞检测 (CCD)
+        self.pymunk_body.linear_velocity_threshold = 0.1 # 设置一个小的阈值以启用CCD，防止高速穿模
 
         self.pymunk_shape = pymunk.Poly(self.pymunk_body, vertices)
-        self.pymunk_shape.elasticity = 0.01 
+        self.pymunk_shape.elasticity = 0.7 # 增加弹性，防止穿模和重叠
         self.pymunk_shape.friction = 1   # 1表示高摩擦力
         self.pymunk_shape.collision_type = COLLISION_TYPE_TANK 
+        self.pymunk_shape.collision_bias = 0.01 # 增加碰撞偏置，防止重叠
 
         self.pymunk_body.damping = 0.6 # 线性阻尼，越大越快停止移动
         self.pymunk_body.angular_damping = 0.6 # 角阻尼，越大越快停止旋转
@@ -131,7 +147,21 @@ class Tank(arcade.Sprite):
         if self.pymunk_body:
             self.center_x = self.pymunk_body.position.x
             self.center_y = self.pymunk_body.position.y
-            self.angle = math.degrees(self.pymunk_body.angle) 
+            # 将Pymunk的math.pi/2（向上）转换为Arcade的0度（向上）
+            self.angle = 90 - math.degrees(self.pymunk_body.angle) 
+
+    def draw_hit_box(self):
+        """ 绘制Pymunk碰撞体的轮廓，用于调试 """
+        if self.pymunk_shape and self.pymunk_body:
+            # 获取Pymunk形状的世界坐标顶点
+            points = []
+            for v in self.pymunk_shape.get_vertices():
+                # 将局部坐标转换为世界坐标
+                world_v = self.pymunk_body.local_to_world(v)
+                points.append((world_v.x, world_v.y))
+            
+            # 绘制多边形轮廓
+            arcade.draw_polygon_outline(points, arcade.color.RED, 2) # 移除border_width关键字，直接传递线条宽度
               
     def shoot(self, current_time): # 接收当前时间参数
         # 检查射击冷却时间
@@ -141,7 +171,7 @@ class Tank(arcade.Sprite):
         # 更新上次射击时间
         self.last_shot_time = current_time
 
-        IMAGE_BARREL_DIRECTION_OFFSET = -60.0 
+        IMAGE_BARREL_DIRECTION_OFFSET = 0
         actual_bullet_angle = IMAGE_BARREL_DIRECTION_OFFSET - self.angle 
         
         bullet_color = arcade.color.YELLOW_ORANGE  

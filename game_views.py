@@ -1,8 +1,15 @@
 import arcade
 import math
 import pymunk
+import os # 添加os模块导入
 from tank_sprites import (Tank, PLAYER_IMAGE_PATH_GREEN, PLAYER_IMAGE_PATH_DESERT,PLAYER_IMAGE_PATH_BLUE, PLAYER_IMAGE_PATH_GREY, PLAYER_MOVEMENT_SPEED, PLAYER_TURN_SPEED, COLLISION_TYPE_BULLET, COLLISION_TYPE_WALL, COLLISION_TYPE_TANK)
 from maps import get_random_map_layout # <--- 修改导入路径
+
+# 获取 game_views.py 文件所在的目录
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 主菜单背景图片路径
+MAIN_MENU_BACKGROUND_IMAGE = os.path.join(BASE_DIR, "tank_background", "main_ground_720.jpg")
+MODE_SELECT_BACKGROUND_IMAGE = os.path.join(BASE_DIR, "tank_background", "ground_720_2.png")
 
 # --- 常量 ---
 # 根据用户反馈调整窗口大小，使其更接近参考图的比例
@@ -21,24 +28,31 @@ GAME_AREA_HEIGHT = GAME_AREA_TOP_Y - GAME_AREA_BOTTOM_Y
 
 
 # 调整后的坦克缩放和墙壁厚度
-NEW_PLAYER_SCALE = 0.65 # 调整坦克大小
+NEW_PLAYER_SCALE = 0.08 # 调整坦克大小
 WALL_THICKNESS = 10    # 墙壁改薄
+WALL_ELASTICITY = 0.8 # 墙壁弹性
 
 class MainMenu(arcade.View):
     """ 主菜单视图 """
     def on_show_view(self):
-        arcade.set_background_color(arcade.color.BLACK)
+        # 加载背景图片
+        self.background = arcade.Sprite(MAIN_MENU_BACKGROUND_IMAGE)
+        self.sprite_list = arcade.SpriteList()
+        self.sprite_list.append(self.background)
+
+        self.background.center_x = SCREEN_WIDTH / 2
+        self.background.center_y = SCREEN_HEIGHT / 2
 
     def on_draw(self):
         self.clear()
-        arcade.draw_text("坦克动荡", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 100,
-                         arcade.color.WHITE, font_size=50, anchor_x="center")
-        # arcade.draw_text("点击开始游戏 (任意键)", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
-        #                  arcade.color.WHITE, font_size=20, anchor_x="center") # 移除此行
-        arcade.draw_text("按 M 查看游戏模式", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, #调整位置
-                            arcade.color.WHITE, font_size=20, anchor_x="center")
-        arcade.draw_text("按 Q 退出", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50, #调整位置
-                            arcade.color.WHITE, font_size=20, anchor_x="center")
+        # 绘制背景图片
+        self.sprite_list.draw()
+        # arcade.draw_text("坦克动荡", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 100,
+        #                  arcade.color.WHITE, font_size=50, anchor_x="center")
+        # arcade.draw_text("按 M 查看游戏模式", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, #调整位置
+        #                     arcade.color.WHITE, font_size=20, anchor_x="center")
+        # arcade.draw_text("按 Q 退出", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50, #调整位置
+        #                     arcade.color.WHITE, font_size=20, anchor_x="center")
 
 
     def on_key_press(self, key, modifiers):
@@ -53,37 +67,38 @@ class MainMenu(arcade.View):
 class ModeSelectView(arcade.View):
     """ 游戏模式选择视图 """
     def on_show_view(self):
-        arcade.set_background_color(arcade.color.DARK_SLATE_GRAY)
+        # arcade.set_background_color(arcade.color.DARK_SLATE_GRAY)
+        self.background = arcade.Sprite(MODE_SELECT_BACKGROUND_IMAGE)
+        self.sprite_list = arcade.SpriteList()
+        self.sprite_list.append(self.background)
+        self.background.center_x = SCREEN_WIDTH / 2
+        self.background.center_y = SCREEN_HEIGHT / 2
 
     def on_draw(self):
         self.clear()
+        # 绘制背景图片
+        self.sprite_list.draw()
         arcade.draw_text("游戏模式", SCREEN_WIDTH / 2, SCREEN_HEIGHT - 100,
-                         arcade.color.WHITE, font_size=40, anchor_x="center")
+                         arcade.color.WHITE, font_size=45, anchor_x="center")
 
-        arcade.draw_text("1. 玩家 vs 电脑", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50,
-                         arcade.color.WHITE, font_size=20, anchor_x="center")
-        arcade.draw_text("2. 双人对战", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
-                         arcade.color.WHITE, font_size=20, anchor_x="center")
-        arcade.draw_text("3. 多人联机 (未实现)", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50,
-                         arcade.color.LIGHT_GRAY, font_size=20, anchor_x="center")
+        arcade.draw_text("1. 双人对战", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 100,
+                         arcade.color.WHITE, font_size=30, anchor_x="center")
+        arcade.draw_text("2. 多人联机", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 50,
+                         arcade.color.WHITE, font_size=30, anchor_x="center")
         arcade.draw_text("按 Esc 返回主菜单", SCREEN_WIDTH / 2, 50,
-                            arcade.color.WHITE, font_size=15, anchor_x="center")
+                            arcade.color.WHITE, font_size=20, anchor_x="center")
 
     def on_key_press(self, key, modifiers):
         if key == arcade.key.ESCAPE:
             main_menu_view = MainMenu()
             self.window.show_view(main_menu_view)
         elif key == arcade.key.KEY_1:
-            print("选择了 玩家 vs 电脑 模式")
-            game_view = GameView(mode="pvc")
-            self.window.show_view(game_view)        
-        elif key == arcade.key.KEY_2:
             print("选择了 双人对战 模式")
             # 进入坦克选择页面
             from tank_selection import TankSelectionView
             tank_selection_view = TankSelectionView()
-            self.window.show_view(tank_selection_view)
-        elif key == arcade.key.KEY_3:
+            self.window.show_view(tank_selection_view)       
+        elif key == arcade.key.KEY_2:
             print("选择了 多人联机 模式 (未实现)")
 
 
@@ -238,7 +253,7 @@ class GameView(arcade.View):
             # 重置Pymunk body的状态
             if self.player_tank.pymunk_body:
                 self.player_tank.pymunk_body.position = p1_start_x, p1_start_y
-                self.player_tank.pymunk_body.angle = 0  # Pymunk角度是弧度
+                self.player_tank.pymunk_body.angle = math.radians(90)  # Pymunk角度是弧度
                 self.player_tank.pymunk_body.velocity = (0, 0)
                 self.player_tank.pymunk_body.angular_velocity = 0
             # 同步Arcade Sprite
@@ -269,7 +284,7 @@ class GameView(arcade.View):
                 # 重置Pymunk body的状态
                 if self.player2_tank.pymunk_body:
                     self.player2_tank.pymunk_body.position = p2_start_x, p2_start_y
-                    self.player2_tank.pymunk_body.angle = 0
+                    self.player2_tank.pymunk_body.angle = math.radians(90)
                     self.player2_tank.pymunk_body.velocity = (0, 0)
                     self.player2_tank.pymunk_body.angular_velocity = 0
                 # 同步Arcade Sprite
@@ -298,7 +313,7 @@ class GameView(arcade.View):
         shape_bottom = pymunk.Segment(body_bottom, (0, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), current_wall_thickness / 2)
         shape_bottom.collision_type = COLLISION_TYPE_WALL
         shape_bottom.friction = 0.8 
-        shape_bottom.elasticity = 0.8 # 为墙壁设置弹性
+        shape_bottom.elasticity = WALL_ELASTICITY # 为墙壁设置弹性
         self.space.add(body_bottom, shape_bottom)
         for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness):
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
@@ -310,7 +325,7 @@ class GameView(arcade.View):
         shape_top = pymunk.Segment(body_top, (0, GAME_AREA_TOP_Y), (SCREEN_WIDTH, GAME_AREA_TOP_Y), current_wall_thickness / 2)
         shape_top.collision_type = COLLISION_TYPE_WALL
         shape_top.friction = 0.8
-        shape_top.elasticity = 0.8 # 为墙壁设置弹性
+        shape_top.elasticity = WALL_ELASTICITY # 为墙壁设置弹性
         self.space.add(body_top, shape_top)
         for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness):
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
@@ -322,7 +337,7 @@ class GameView(arcade.View):
         shape_left = pymunk.Segment(body_left, (0, GAME_AREA_BOTTOM_Y), (0, GAME_AREA_TOP_Y), current_wall_thickness / 2)
         shape_left.collision_type = COLLISION_TYPE_WALL
         shape_left.friction = 0.8
-        shape_left.elasticity = 0.8 # 为墙壁设置弹性
+        shape_left.elasticity = WALL_ELASTICITY # 为墙壁设置弹性
         self.space.add(body_left, shape_left)
         for y_coord in range(int(GAME_AREA_BOTTOM_Y), int(GAME_AREA_TOP_Y + current_wall_thickness), current_wall_thickness): # 调整循环确保覆盖
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
@@ -334,7 +349,7 @@ class GameView(arcade.View):
         shape_right = pymunk.Segment(body_right, (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_TOP_Y), current_wall_thickness / 2)
         shape_right.collision_type = COLLISION_TYPE_WALL
         shape_right.friction = 0.8
-        shape_right.elasticity = 0.8 # 为墙壁设置弹性
+        shape_right.elasticity = WALL_ELASTICITY # 为墙壁设置弹性
         self.space.add(body_right, shape_right)
         for y_coord in range(int(GAME_AREA_BOTTOM_Y), int(GAME_AREA_TOP_Y + current_wall_thickness), current_wall_thickness): # 调整循环确保覆盖
             wall = arcade.SpriteSolidColor(current_wall_thickness, current_wall_thickness, wall_color)
@@ -360,7 +375,7 @@ class GameView(arcade.View):
             shape = pymunk.Poly(body, points)
             shape.collision_type = COLLISION_TYPE_WALL
             shape.friction = 0.8    # 与边界墙壁一致
-            shape.elasticity = 0.8  # 与边界墙壁一致
+            shape.elasticity = WALL_ELASTICITY  # 与边界墙壁一致
             self.space.add(body, shape)
 
         # UI面板背景 (可选) - 注意：这些绘制应该在 on_draw 中，setup只负责创建对象
@@ -385,6 +400,12 @@ class GameView(arcade.View):
         self.wall_list.draw()
         self.player_list.draw()
         self.bullet_list.draw()
+
+        # 绘制坦克的碰撞体积描线 (用于调试)
+        # if self.player_list:
+        #     for tank_sprite in self.player_list:
+        #         if tank_sprite and hasattr(tank_sprite, 'draw_hit_box'):
+        #             tank_sprite.draw_hit_box()
 
         # UI 文字绘制
         ui_text_color = arcade.color.BLACK
@@ -450,7 +471,6 @@ class GameView(arcade.View):
                                               overlay_center_y - overlay_height / 2,
                                               overlay_center_y + overlay_height / 2,
                                               (0, 0, 0, 150)) # 半透明黑色
-            # 回合结果文字
             arcade.draw_text(self.round_result_text, 
                              SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 
                              arcade.color.WHITE_SMOKE, font_size=30, 
@@ -522,11 +542,10 @@ class GameView(arcade.View):
             return 
 
         # 更新物理空间
-        self.space.step(delta_time)
-        
-        # delta_time = min(delta_time, 1.0 / 20.0) # 限制最大步长为1/20秒
-        # for _ in range(20): # 20次小步长更新
-        #     self.space.step(delta_time / 20.0) # 每次更新1/20秒
+        # 启用小步长更新，提高物理模拟精度，减少穿模
+        # 限制最大步长，防止在帧率过低时物理模拟不稳定
+        delta_time = min(delta_time, 1.0 / 60.0) # 限制最大步长为1/60秒，确保至少60FPS的物理更新
+        self.space.step(delta_time) # 进行一次物理更新
 
 
         # Arcade SpriteList的 .update() 仍然需要调用，以便执行Sprite自己的update（如果有的话）
@@ -611,17 +630,21 @@ class GameView(arcade.View):
 
             if key == arcade.key.W:
                 # 根据当前角度计算速度向量
-                vx = -PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
-                vy = PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                # 根据Pymunk body的当前角度计算速度向量
+                # Pymunk的0弧度是X轴正方向，逆时针为正
+                # 坦克图片默认向上（Arcade 0度），对应Pymunk的math.pi/2
+                # 所以，如果body.angle是Pymunk的角度，那么前进方向的X分量是cos(body.angle)，Y分量是sin(body.angle)
+                vx = PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                vy = PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
                 body.velocity = (vx, vy)
             elif key == arcade.key.S:
-                vx = PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle) # 反向
-                vy = -PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle) # 反向
+                vx = -PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle) # 反向
+                vy = -PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle) # 反向
                 body.velocity = (vx, vy)
-            elif key == arcade.key.A: # 逆时针 (Pymunk中正角速度是逆时针)/勿修改
-                body.angular_velocity = -PYMUNK_PLAYER_TURN_RAD_PER_SEC 
-            elif key == arcade.key.D: # 顺时针
-                body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
+            elif key == arcade.key.A: # 顺时针 (Pymunk中负角速度是顺时针)
+                body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC # 原D键逻辑
+            elif key == arcade.key.D: # 逆时针
+                body.angular_velocity = -PYMUNK_PLAYER_TURN_RAD_PER_SEC # 原A键逻辑
             elif key == arcade.key.SPACE: # 玩家1射击键
                 if self.player_tank and self.player_tank.pymunk_body: # 确保坦克和其body存在
                     # 调用shoot方法并传递当前时间
@@ -638,17 +661,18 @@ class GameView(arcade.View):
             PYMUNK_PLAYER_TURN_RAD_PER_SEC = math.radians(PLAYER_TURN_SPEED * 60 * 1.0) # 增大旋转速度倍率
 
             if key == arcade.key.UP:
-                vx = -PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
-                vy = PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                # 根据Pymunk body的当前角度计算速度向量
+                vx = PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                vy = PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
                 body.velocity = (vx, vy)
             elif key == arcade.key.DOWN:
-                vx = PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
-                vy = -PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                vx = -PYMUNK_PLAYER_MAX_SPEED * math.cos(body.angle)
+                vy = -PYMUNK_PLAYER_MAX_SPEED * math.sin(body.angle)
                 body.velocity = (vx, vy)
-            elif key == arcade.key.LEFT: # 逆时针
-                body.angular_velocity = -PYMUNK_PLAYER_TURN_RAD_PER_SEC
-            elif key == arcade.key.RIGHT: # 顺时针
+            elif key == arcade.key.LEFT: # 顺时针
                 body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
+            elif key == arcade.key.RIGHT: # 逆时针
+                body.angular_velocity = -PYMUNK_PLAYER_TURN_RAD_PER_SEC
             elif key == arcade.key.ENTER or key == arcade.key.RSHIFT: 
                 if self.player2_tank and self.player2_tank.pymunk_body: # 确保坦克和其body存在
                     # 调用shoot方法并传递当前时间

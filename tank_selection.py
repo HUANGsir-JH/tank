@@ -29,7 +29,7 @@ class TankOption:
         arcade.draw_text(
             self.name,
             self.sprite.center_x,
-            self.sprite.center_y - 50,
+            self.sprite.center_y - 100,
             arcade.color.BLACK,
             font_size=16,
             anchor_x="center"
@@ -61,7 +61,7 @@ class TankOption:
             arcade.draw_text(
                 str(self.player), # 绘制数字
                 box_center_x,
-                box_center_y+10,
+                box_center_y+20,
                 arcade.color.WHITE, # 尝试使用白色，更醒目
                 font_size=24, 
                 anchor_x="center",
@@ -85,17 +85,17 @@ class TankSelectionView(arcade.View):
     def _setup_tank_options(self):
         """设置坦克选项"""
         # 计算四个坦克的位置
-        padding = 150  # 坦克之间的间距
+        padding = 200  # 坦克之间的间距
         total_width = 3 * padding  # 三个间距对应四个坦克
         start_x = (SCREEN_WIDTH - total_width) / 2
         center_y = SCREEN_HEIGHT / 2
         
         # 创建四种坦克选项
         self.tank_options = [
-            TankOption(PLAYER_IMAGE_PATH_GREEN, "绿色坦克", start_x, center_y, 0.7),
-            TankOption(PLAYER_IMAGE_PATH_DESERT, "沙漠坦克", start_x + padding, center_y, 0.7),
-            TankOption(PLAYER_IMAGE_PATH_BLUE, "蓝色坦克", start_x + 2 * padding, center_y, 0.7),
-            TankOption(PLAYER_IMAGE_PATH_GREY, "灰色坦克", start_x + 3 * padding, center_y, 0.7)
+            TankOption(PLAYER_IMAGE_PATH_GREEN, "绿色坦克", start_x, center_y, 0.1),
+            TankOption(PLAYER_IMAGE_PATH_DESERT, "黄色坦克", start_x + padding, center_y, 0.11),
+            TankOption(PLAYER_IMAGE_PATH_BLUE, "蓝色坦克", start_x + 2 * padding, center_y, 0.1),
+            TankOption(PLAYER_IMAGE_PATH_GREY, "灰色坦克", start_x + 3 * padding, center_y, 0.1)
         ]
         
         # 将每个坦克选项的精灵添加到SpriteList中
