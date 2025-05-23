@@ -25,6 +25,9 @@ PLAYER_IMAGE_PATH_DESERT = os.path.join(BASE_DIR, "tank-img", "yellow_tank.png")
 PLAYER_IMAGE_PATH_BLUE = os.path.join(BASE_DIR, "tank-img", "blue_tank.png")
 PLAYER_IMAGE_PATH_GREY = os.path.join(BASE_DIR, "tank-img", "grey_tank.png")
 
+# 音效文件路径
+EXPLOSION_SOUND = os.path.join(BASE_DIR, "tank_voice", "explosion.wav")
+
 # Pymunk碰撞类型常量
 COLLISION_TYPE_BULLET = 1
 COLLISION_TYPE_WALL = 2
@@ -62,7 +65,7 @@ class Tank(arcade.Sprite):
 
         # 射击冷却时间属性
         self.last_shot_time = 0.0 # 上次射击的时间
-        self.shot_cooldown = 0.2 # 射击冷却时间 (秒)
+        self.shot_cooldown = 0.4 # 射击冷却时间 (秒)
 
         self.pymunk_body = None
         self.pymunk_shape = None
@@ -159,6 +162,12 @@ class Tank(arcade.Sprite):
         # 更新上次射击时间
         self.last_shot_time = current_time
 
+        # 播放射击音效
+        if os.path.exists(EXPLOSION_SOUND):
+            arcade.play_sound(arcade.load_sound(EXPLOSION_SOUND))
+        else:
+            print(f"警告: 音效文件 '{EXPLOSION_SOUND}' 未找到。")
+
         IMAGE_BARREL_DIRECTION_OFFSET = 0
         actual_bullet_angle = IMAGE_BARREL_DIRECTION_OFFSET - self.angle 
         
@@ -173,7 +182,7 @@ class Tank(arcade.Sprite):
         
         # 定义子弹半径和速度
         BULLET_RADIUS = 4 
-        BULLET_SPEED_MAGNITUDE = 12 
+        BULLET_SPEED_MAGNITUDE = 16 
 
         bullet = Bullet(radius=BULLET_RADIUS, 
                        owner=self, 
