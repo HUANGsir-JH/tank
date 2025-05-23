@@ -122,13 +122,13 @@ class Tank(arcade.Sprite):
         self.pymunk_body.linear_velocity_threshold = 0.1 # 设置一个小的阈值以启用CCD，防止高速穿模
 
         self.pymunk_shape = pymunk.Poly(self.pymunk_body, vertices)
-        self.pymunk_shape.elasticity = 0.7 # 增加弹性，防止穿模和重叠
+        self.pymunk_shape.elasticity = 0.0 # 碰撞后立即停止，无反弹
         self.pymunk_shape.friction = 1   # 1表示高摩擦力
         self.pymunk_shape.collision_type = COLLISION_TYPE_TANK 
         self.pymunk_shape.collision_bias = 0.01 # 增加碰撞偏置，防止重叠
 
-        self.pymunk_body.damping = 0.6 # 线性阻尼，越大越快停止移动
-        self.pymunk_body.angular_damping = 0.6 # 角阻尼，越大越快停止旋转
+        self.pymunk_body.damping = 1 # 线性阻尼，越大越快停止移动
+        self.pymunk_body.angular_damping = 1 # 角阻尼，越大越快停止旋转
         self.pymunk_body.sprite = self
 
     def take_damage(self, amount):
@@ -150,18 +150,6 @@ class Tank(arcade.Sprite):
             # 将Pymunk的math.pi/2（向上）转换为Arcade的0度（向上）
             self.angle = 90 - math.degrees(self.pymunk_body.angle) 
 
-    def draw_hit_box(self):
-        """ 绘制Pymunk碰撞体的轮廓，用于调试 """
-        if self.pymunk_shape and self.pymunk_body:
-            # 获取Pymunk形状的世界坐标顶点
-            points = []
-            for v in self.pymunk_shape.get_vertices():
-                # 将局部坐标转换为世界坐标
-                world_v = self.pymunk_body.local_to_world(v)
-                points.append((world_v.x, world_v.y))
-            
-            # 绘制多边形轮廓
-            arcade.draw_polygon_outline(points, arcade.color.RED, 2) # 移除border_width关键字，直接传递线条宽度
               
     def shoot(self, current_time): # 接收当前时间参数
         # 检查射击冷却时间
@@ -231,7 +219,7 @@ class Bullet(arcade.SpriteCircle):
         )
         self.pymunk_body.angle = math.radians(actual_emission_angle_degrees)
 
-        pymunk_initial_speed = speed_magnitude * 120 
+        pymunk_initial_speed = speed_magnitude * 60 
         vx = -pymunk_initial_speed * math.sin(self.pymunk_body.angle) 
         vy = pymunk_initial_speed * math.cos(self.pymunk_body.angle)
         self.pymunk_body.velocity = (vx, vy)
@@ -239,7 +227,7 @@ class Bullet(arcade.SpriteCircle):
 
         self.pymunk_shape = pymunk.Circle(self.pymunk_body, self.radius, (0,0))
         self.pymunk_shape.friction = 0.1 # 0.1表示低摩擦力 
-        self.pymunk_shape.elasticity = 0.5 
+        self.pymunk_shape.elasticity = 1 
         self.pymunk_shape.collision_type = COLLISION_TYPE_BULLET
         self.pymunk_body.sprite = self 
 

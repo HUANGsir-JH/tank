@@ -30,7 +30,7 @@ GAME_AREA_HEIGHT = GAME_AREA_TOP_Y - GAME_AREA_BOTTOM_Y
 # 调整后的坦克缩放和墙壁厚度
 NEW_PLAYER_SCALE = 0.08 # 调整坦克大小
 WALL_THICKNESS = 10    # 墙壁改薄
-WALL_ELASTICITY = 0.8 # 墙壁弹性
+WALL_ELASTICITY = 0.7 # 墙壁弹性
 
 class MainMenu(arcade.View):
     """ 主菜单视图 """
