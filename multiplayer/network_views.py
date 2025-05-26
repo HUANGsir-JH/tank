@@ -438,6 +438,10 @@ class NetworkClientView(arcade.View):
             "walls": arcade.SpriteList()
         }
 
+        # 线程安全的状态更新队列
+        self.pending_updates = []
+        self.pending_disconnection = None
+
     def connect_to_room(self, host_ip: str, host_port: int, player_name: str) -> bool:
         """连接到房间"""
         # 设置回调
@@ -456,6 +460,26 @@ class NetworkClientView(arcade.View):
     def on_hide_view(self):
         """隐藏视图时的清理"""
         self.game_client.disconnect()
+
+    def on_update(self, delta_time):
+        """主线程更新 - 处理网络线程的回调"""
+        # 处理待处理的游戏状态更新
+        while self.pending_updates:
+            game_state = self.pending_updates.pop(0)
+            self._update_sprites_from_state(game_state)
+
+        # 处理断开连接
+        if self.pending_disconnection:
+            self.connected = False
+            reason = self.pending_disconnection
+            self.pending_disconnection = None
+
+            # 在主线程中安全地切换视图
+            try:
+                browser_view = RoomBrowserView()
+                self.window.show_view(browser_view)
+            except Exception as e:
+                print(f"切换视图时出错: {e}")
 
     def on_draw(self):
         """绘制视图"""
@@ -515,51 +539,48 @@ class NetworkClientView(arcade.View):
         print(f"已连接，玩家ID: {player_id}")
 
     def _on_disconnected(self, reason: str):
-        """断开连接回调"""
-        self.connected = False
+        """断开连接回调 - 线程安全"""
         print(f"连接断开: {reason}")
-
-        # 返回房间浏览
-        browser_view = RoomBrowserView()
-        self.window.show_view(browser_view)
+        # 标记需要断开连接，在主线程中处理
+        self.pending_disconnection = reason
 
     def _on_game_state_update(self, game_state: dict):
-        """游戏状态更新回调"""
-        self.game_state = game_state
-        self._update_sprites_from_state()
+        """游戏状态更新回调 - 线程安全"""
+        # 将游戏状态更新放入队列，在主线程中处理
+        self.pending_updates.append(game_state.copy())
 
-    def _update_sprites_from_state(self):
-        """根据游戏状态更新精灵"""
-        if not self.game_state:
-            return
+    def _update_sprites_from_state(self, game_state: dict):
+        """根据游戏状态更新精灵 - 在主线程中调用"""
+        try:
+            # 更新坦克
+            tanks_data = game_state.get("tanks", [])
+            self.sprite_lists["tanks"].clear()
 
-        # 更新坦克
-        tanks_data = self.game_state.get("tanks", [])
-        self.sprite_lists["tanks"].clear()
+            for tank_data in tanks_data:
+                # 创建坦克精灵（简化版，只用于显示）
+                tank_sprite = arcade.SpriteSolidColor(50, 50, arcade.color.GREEN)
+                tank_sprite.center_x = tank_data["position"][0]
+                tank_sprite.center_y = tank_data["position"][1]
+                tank_sprite.angle = tank_data["angle"]
 
-        for tank_data in tanks_data:
-            # 创建坦克精灵（简化版，只用于显示）
-            tank_sprite = arcade.Sprite(scale=0.08)
-            tank_sprite.center_x = tank_data["position"][0]
-            tank_sprite.center_y = tank_data["position"][1]
-            tank_sprite.angle = tank_data["angle"]
+                # 根据玩家ID设置颜色
+                player_id = tank_data.get("player_id", "unknown")
+                if player_id == "host":
+                    tank_sprite.color = arcade.color.GREEN
+                else:
+                    tank_sprite.color = arcade.color.BLUE
 
-            # 根据玩家ID设置颜色
-            player_id = tank_data.get("player_id", "unknown")
-            if player_id == "host":
-                tank_sprite.color = arcade.color.GREEN
-            else:
-                tank_sprite.color = arcade.color.BLUE
+                self.sprite_lists["tanks"].append(tank_sprite)
 
-            self.sprite_lists["tanks"].append(tank_sprite)
+            # 更新子弹
+            bullets_data = game_state.get("bullets", [])
+            self.sprite_lists["bullets"].clear()
 
-        # 更新子弹
-        bullets_data = self.game_state.get("bullets", [])
-        self.sprite_lists["bullets"].clear()
-
-        for bullet_data in bullets_data:
-            bullet_sprite = arcade.SpriteCircle(4, arcade.color.YELLOW)
-            bullet_sprite.center_x = bullet_data["position"][0]
-            bullet_sprite.center_y = bullet_data["position"][1]
-            bullet_sprite.angle = bullet_data["angle"]
-            self.sprite_lists["bullets"].append(bullet_sprite)
+            for bullet_data in bullets_data:
+                bullet_sprite = arcade.SpriteCircle(4, arcade.color.YELLOW)
+                bullet_sprite.center_x = bullet_data["position"][0]
+                bullet_sprite.center_y = bullet_data["position"][1]
+                bullet_sprite.angle = bullet_data["angle"]
+                self.sprite_lists["bullets"].append(bullet_sprite)
+        except Exception as e:
+            print(f"更新精灵时出错: {e}")
