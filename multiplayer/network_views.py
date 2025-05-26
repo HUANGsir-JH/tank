@@ -6,6 +6,7 @@
 
 import arcade
 import threading
+import math
 from typing import Dict, Optional, List
 from .udp_discovery import RoomDiscovery, RoomInfo
 from .udp_host import GameHost
@@ -229,7 +230,7 @@ class RoomBrowserView(arcade.View):
             self.selected_room_index = max(0, len(rooms) - 1)
 
     def _join_selected_room(self):
-        """加入选中的房间"""
+        """加入选中的房间 - 进入坦克选择"""
         if not self.available_rooms:
             return
 
@@ -237,18 +238,20 @@ class RoomBrowserView(arcade.View):
         if 0 <= self.selected_room_index < len(room_list):
             selected_room = room_list[self.selected_room_index]
 
-            # 创建客户端视图
-            client_view = NetworkClientView()
-            if client_view.connect_to_room(selected_room.host_ip, 12346, self.player_name):
-                self.window.show_view(client_view)
-            else:
-                print("连接房间失败")
+            # 进入坦克选择界面
+            from .network_tank_selection import NetworkTankSelectionView
+            tank_selection_view = NetworkTankSelectionView(
+                is_host=False,
+                host_ip=selected_room.host_ip,
+                host_port=12346
+            )
+            self.window.show_view(tank_selection_view)
 
     def _create_room_with_name(self, room_name: str):
-        """使用指定名称创建房间"""
-        host_view = NetworkHostView()
-        host_view.start_hosting(room_name)
-        self.window.show_view(host_view)
+        """使用指定名称创建房间 - 进入坦克选择"""
+        from .network_tank_selection import NetworkTankSelectionView
+        tank_selection_view = NetworkTankSelectionView(is_host=True, room_name=room_name)
+        self.window.show_view(tank_selection_view)
 
     def on_text(self, text: str):
         """处理文本输入"""
@@ -271,6 +274,10 @@ class NetworkHostView(arcade.View):
 
         # 游戏相关（复用现有GameView的逻辑）
         self.game_view = None
+
+        # 坦克选择信息
+        self.host_tank_info = None  # 主机坦克信息
+        self.client_tank_info = {}  # 客户端坦克信息 {client_id: tank_info}
 
     def start_hosting(self, room_name: str) -> bool:
         """开始主机服务"""
@@ -369,7 +376,24 @@ class NetworkHostView(arcade.View):
         except ImportError:
             # 如果相对导入失败，尝试绝对导入
             from game_views import GameView
-        self.game_view = GameView(mode="network_host")
+
+        # 传递坦克选择信息
+        player1_tank_image = None
+        player2_tank_image = None
+
+        if self.host_tank_info:
+            player1_tank_image = self.host_tank_info.get("image_path")
+
+        # 获取第一个客户端的坦克信息
+        if self.client_tank_info:
+            first_client_info = list(self.client_tank_info.values())[0]
+            player2_tank_image = first_client_info.get("image_path")
+
+        self.game_view = GameView(
+            mode="network_host",
+            player1_tank_image=player1_tank_image,
+            player2_tank_image=player2_tank_image
+        )
         self.game_view.setup()
         self.game_started = True
         print("游戏开始!")
@@ -383,36 +407,45 @@ class NetworkHostView(arcade.View):
         tanks = []
         bullets = []
 
-        # 坦克状态
+        # 坦克状态 - 优化数据大小
         for tank in self.game_view.player_list:
+            # 简化坦克图片信息，只传递类型而不是完整路径
+            tank_image_file = getattr(tank, 'tank_image_file', '')
+            tank_type = "green"  # 默认
+            if tank_image_file:
+                if 'green' in tank_image_file.lower():
+                    tank_type = "green"
+                elif 'desert' in tank_image_file.lower() or 'yellow' in tank_image_file.lower():
+                    tank_type = "yellow"
+                elif 'blue' in tank_image_file.lower():
+                    tank_type = "blue"
+                elif 'grey' in tank_image_file.lower():
+                    tank_type = "grey"
+
             tank_data = {
-                "player_id": getattr(tank, 'player_id', 'unknown'),
-                "position": [tank.center_x, tank.center_y],
-                "angle": tank.angle,
-                "health": tank.health,
-                "tank_image": getattr(tank, 'tank_image_file', '')
+                "id": getattr(tank, 'player_id', 'unknown'),
+                "pos": [round(tank.center_x, 1), round(tank.center_y, 1)],  # 减少精度
+                "ang": round(tank.angle, 1),
+                "hp": tank.health,
+                "type": tank_type
             }
             tanks.append(tank_data)
 
-        # 子弹状态
-        for bullet in self.game_view.bullet_list:
+        # 子弹状态 - 优化数据大小
+        for i, bullet in enumerate(self.game_view.bullet_list):
             bullet_data = {
-                "id": id(bullet),
-                "position": [bullet.center_x, bullet.center_y],
-                "angle": bullet.angle,
-                "owner": getattr(bullet.owner, 'player_id', 'unknown') if bullet.owner else 'unknown'
+                "id": i,  # 使用索引而不是内存地址
+                "pos": [round(bullet.center_x, 1), round(bullet.center_y, 1)],
+                "ang": round(bullet.angle, 1),
+                "own": getattr(bullet.owner, 'player_id', 'unk') if bullet.owner else 'unk'
             }
             bullets.append(bullet_data)
 
-        # 回合信息
+        # 回合信息 - 优化数据大小
         round_info = {
-            "scores": {
-                "player1": self.game_view.player1_score,
-                "player2": self.game_view.player2_score
-            },
-            "round_over": self.game_view.round_over,
-            "game_over": max(self.game_view.player1_score, self.game_view.player2_score) >= self.game_view.max_score,
-            "winner": None
+            "sc": [self.game_view.player1_score, self.game_view.player2_score],
+            "ro": self.game_view.round_over,
+            "go": max(self.game_view.player1_score, self.game_view.player2_score) >= self.game_view.max_score
         }
 
         return {
@@ -423,7 +456,7 @@ class NetworkHostView(arcade.View):
 
 
 class NetworkClientView(arcade.View):
-    """网络客户端视图"""
+    """网络客户端视图 - 重构版，集成完整游戏逻辑"""
 
     def __init__(self):
         super().__init__()
@@ -431,12 +464,12 @@ class NetworkClientView(arcade.View):
         self.game_state = {}
         self.connected = False
 
-        # 显示相关
-        self.sprite_lists = {
-            "tanks": arcade.SpriteList(),
-            "bullets": arcade.SpriteList(),
-            "walls": arcade.SpriteList()
-        }
+        # 客户端坦克信息
+        self.client_tank_info = None
+
+        # 完整游戏视图（复用GameView的逻辑）
+        self.game_view = None
+        self.game_initialized = False
 
         # 线程安全的状态更新队列
         self.pending_updates = []
@@ -456,6 +489,7 @@ class NetworkClientView(arcade.View):
     def on_show_view(self):
         """显示视图时的初始化"""
         arcade.set_background_color(arcade.color.LIGHT_GRAY)
+        self._initialize_game_view()
 
     def on_hide_view(self):
         """隐藏视图时的清理"""
@@ -466,7 +500,7 @@ class NetworkClientView(arcade.View):
         # 处理待处理的游戏状态更新
         while self.pending_updates:
             game_state = self.pending_updates.pop(0)
-            self._update_sprites_from_state(game_state)
+            self._sync_game_state(game_state)
 
         # 处理断开连接
         if self.pending_disconnection:
@@ -481,19 +515,24 @@ class NetworkClientView(arcade.View):
             except Exception as e:
                 print(f"切换视图时出错: {e}")
 
+        # 更新游戏视图
+        if self.game_view and self.connected:
+            # 注意：不调用game_view.on_update，因为客户端不处理游戏逻辑
+            # 只同步显示状态
+            pass
+
     def on_draw(self):
         """绘制视图"""
         self.clear()
 
-        if self.connected:
-            # 绘制游戏内容
-            for sprite_list in self.sprite_lists.values():
-                sprite_list.draw()
+        if self.connected and self.game_view:
+            # 使用完整游戏视图进行绘制
+            self.game_view.on_draw()
 
-            # 绘制UI信息
-            arcade.draw_text(f"玩家ID: {self.game_client.get_player_id()}",
+            # 绘制网络状态信息
+            arcade.draw_text(f"客户端 - 玩家ID: {self.game_client.get_player_id()}",
                            10, self.window.height - 30,
-                           arcade.color.BLACK, font_size=16)
+                           arcade.color.WHITE, font_size=16)
         else:
             arcade.draw_text("连接中...",
                            self.window.width // 2, self.window.height // 2,
@@ -549,38 +588,95 @@ class NetworkClientView(arcade.View):
         # 将游戏状态更新放入队列，在主线程中处理
         self.pending_updates.append(game_state.copy())
 
-    def _update_sprites_from_state(self, game_state: dict):
-        """根据游戏状态更新精灵 - 在主线程中调用"""
+    def _initialize_game_view(self):
+        """初始化完整的游戏视图"""
+        if self.game_initialized:
+            return
+
         try:
-            # 更新坦克
-            tanks_data = game_state.get("tanks", [])
-            self.sprite_lists["tanks"].clear()
+            from game_views import GameView
 
-            for tank_data in tanks_data:
-                # 创建坦克精灵（简化版，只用于显示）
-                tank_sprite = arcade.SpriteSolidColor(50, 50, arcade.color.GREEN)
-                tank_sprite.center_x = tank_data["position"][0]
-                tank_sprite.center_y = tank_data["position"][1]
-                tank_sprite.angle = tank_data["angle"]
+            # 创建完整的游戏视图
+            player1_tank_image = None
+            player2_tank_image = None
 
-                # 根据玩家ID设置颜色
-                player_id = tank_data.get("player_id", "unknown")
-                if player_id == "host":
-                    tank_sprite.color = arcade.color.GREEN
-                else:
-                    tank_sprite.color = arcade.color.BLUE
+            if self.client_tank_info:
+                player2_tank_image = self.client_tank_info.get("image_path")
 
-                self.sprite_lists["tanks"].append(tank_sprite)
+            self.game_view = GameView(
+                mode="network_client",
+                player1_tank_image=player1_tank_image,  # 主机坦克，稍后从网络同步
+                player2_tank_image=player2_tank_image   # 客户端坦克
+            )
+            self.game_view.setup()
+            self.game_initialized = True
+            print("客户端游戏视图初始化完成")
 
-            # 更新子弹
-            bullets_data = game_state.get("bullets", [])
-            self.sprite_lists["bullets"].clear()
-
-            for bullet_data in bullets_data:
-                bullet_sprite = arcade.SpriteCircle(4, arcade.color.YELLOW)
-                bullet_sprite.center_x = bullet_data["position"][0]
-                bullet_sprite.center_y = bullet_data["position"][1]
-                bullet_sprite.angle = bullet_data["angle"]
-                self.sprite_lists["bullets"].append(bullet_sprite)
         except Exception as e:
-            print(f"更新精灵时出错: {e}")
+            print(f"初始化游戏视图失败: {e}")
+
+    def _sync_game_state(self, game_state: dict):
+        """同步服务器游戏状态到本地游戏视图"""
+        if not self.game_view:
+            return
+
+        try:
+            # 同步坦克状态
+            tanks_data = game_state.get("tanks", [])
+            if self.game_view.player_list and len(tanks_data) >= len(self.game_view.player_list):
+                for i, tank in enumerate(self.game_view.player_list):
+                    if i < len(tanks_data):
+                        tank_data = tanks_data[i]
+
+                        # 适配优化后的数据格式
+                        if "pos" in tank_data:  # 新格式
+                            tank.center_x = tank_data["pos"][0]
+                            tank.center_y = tank_data["pos"][1]
+                            tank.angle = tank_data["ang"]
+                            tank.health = tank_data.get("hp", 5)
+                        else:  # 兼容旧格式
+                            tank.center_x = tank_data["position"][0]
+                            tank.center_y = tank_data["position"][1]
+                            tank.angle = tank_data["angle"]
+                            tank.health = tank_data.get("health", 5)
+
+                        # 同步Pymunk body位置（如果存在）
+                        if hasattr(tank, 'pymunk_body') and tank.pymunk_body:
+                            tank.pymunk_body.position = (tank.center_x, tank.center_y)
+                            tank.pymunk_body.angle = math.radians(tank.angle + 90)  # 转换角度
+
+            # 同步子弹状态
+            bullets_data = game_state.get("bullets", [])
+            # 清空现有子弹
+            self.game_view.bullet_list.clear()
+
+            # 重新创建子弹（简化处理）
+            for bullet_data in bullets_data:
+                try:
+                    from tank_sprites import Bullet
+
+                    # 适配优化后的数据格式
+                    if "pos" in bullet_data:  # 新格式
+                        bullet = Bullet(bullet_data["pos"][0], bullet_data["pos"][1], bullet_data["ang"])
+                    else:  # 兼容旧格式
+                        bullet = Bullet(bullet_data["position"][0], bullet_data["position"][1], bullet_data["angle"])
+
+                    self.game_view.bullet_list.append(bullet)
+                except Exception as e:
+                    print(f"创建子弹失败: {e}")
+
+            # 同步回合信息
+            round_info = game_state.get("round_info", {})
+            if "sc" in round_info:  # 新格式
+                scores = round_info["sc"]
+                if len(scores) >= 2:
+                    self.game_view.player1_score = scores[0]
+                    self.game_view.player2_score = scores[1]
+                self.game_view.round_over = round_info.get("ro", False)
+            elif "scores" in round_info:  # 兼容旧格式
+                self.game_view.player1_score = round_info["scores"].get("player1", 0)
+                self.game_view.player2_score = round_info["scores"].get("player2", 0)
+                self.game_view.round_over = round_info.get("round_over", False)
+
+        except Exception as e:
+            print(f"同步游戏状态失败: {e}")
