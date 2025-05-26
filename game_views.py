@@ -13,8 +13,8 @@ MODE_SELECT_BACKGROUND_IMAGE = os.path.join(BASE_DIR, "tank_background", "ground
 
 # --- 常量 ---
 # 根据用户反馈调整窗口大小，使其更接近参考图的比例
-SCREEN_WIDTH = 1280  
-SCREEN_HEIGHT = 720 
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 720
 # SCREEN_TITLE 在主程序中定义
 
 # UI 面板的高度
@@ -97,9 +97,13 @@ class ModeSelectView(arcade.View):
             # 进入坦克选择页面
             from tank_selection import TankSelectionView
             tank_selection_view = TankSelectionView()
-            self.window.show_view(tank_selection_view)       
+            self.window.show_view(tank_selection_view)
         elif key == arcade.key.KEY_2:
-            print("选择了 多人联机 模式 (未实现)")
+            print("选择了 多人联机 模式")
+            # 进入多人游戏房间浏览
+            from multiplayer.network_views import RoomBrowserView
+            room_browser_view = RoomBrowserView()
+            self.window.show_view(room_browser_view)
 
 
 class GameView(arcade.View):
@@ -126,10 +130,10 @@ class GameView(arcade.View):
 
         # Pymunk物理空间
         self.space = pymunk.Space()
-        self.space.gravity = (0, 0) 
-        self.space.damping = 0.8  
+        self.space.gravity = (0, 0)
+        self.space.damping = 0.8
         # 物理空间的阻尼，模拟空气阻力，damping越大，物体运动越慢
-        
+
         # 用于在碰撞回调后安全移除Pymunk body和Arcade sprite
         self.pymunk_bodies_to_remove_post_step = []
         self.arcade_sprites_to_remove_post_step = []
@@ -148,7 +152,7 @@ class GameView(arcade.View):
         # 子弹 vs 坦克
         handler_bullet_tank = self.space.add_collision_handler(COLLISION_TYPE_BULLET, COLLISION_TYPE_TANK)
         handler_bullet_tank.pre_solve = self._bullet_hit_tank_handler
-    
+
     def _bullet_hit_wall_handler(self, arbiter: pymunk.Arbiter, space: pymunk.Space, data):
         """Pymunk回调：子弹撞墙"""
         bullet_shape, wall_shape = arbiter.shapes
@@ -172,13 +176,13 @@ class GameView(arcade.View):
             # 注意：如果子弹的弹性很高，它可能会多次快速碰撞同一面墙，导致bounce_count迅速增加。
             # 可能需要一个冷却时间或者更复杂的反弹逻辑。
             # 简单的处理是让Pymunk的弹性起作用。
-            pass 
+            pass
         return True # 允许碰撞发生并由Pymunk处理物理反弹
 
     def _bullet_hit_tank_handler(self, arbiter: pymunk.Arbiter, space: pymunk.Space, data):
         """Pymunk回调：子弹撞坦克"""
         bullet_shape, tank_shape = arbiter.shapes
-        
+
         # 确保获取到正确的bullet和tank shape (arbiter.shapes顺序不保证)
         if bullet_shape.collision_type == COLLISION_TYPE_BULLET:
             bullet_sprite = bullet_shape.body.sprite
@@ -226,20 +230,20 @@ class GameView(arcade.View):
             self.bullet_list.clear() # 清空所有子弹
         else:
             self.bullet_list = arcade.SpriteList()        # 重置/创建 玩家1 坦克
-        p1_start_x = WALL_THICKNESS * 3 
+        p1_start_x = WALL_THICKNESS * 3
         p1_start_y = GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT / 2
-        
+
         # 确保player_list存在
         if self.player_list is None:
             self.player_list = arcade.SpriteList()
-            
+
         # 检查坦克是否存在且是否在列表中
         if self.player_tank and self.player_tank in self.player_list:
             # 如果坦克死亡，从列表中移除
             if not self.player_tank.is_alive():
                 self.player_list.remove(self.player_tank)
                 self.player_tank = None
-        
+
         # 如果坦克不存在，创建新的
         if not self.player_tank:
             self.player_tank = Tank(self.player1_tank_image, NEW_PLAYER_SCALE, p1_start_x, p1_start_y)
@@ -258,19 +262,19 @@ class GameView(arcade.View):
                 self.player_tank.pymunk_body.angular_velocity = 0
             # 同步Arcade Sprite
             self.player_tank.sync_with_pymunk_body()
-            
+
           # 重置/创建 玩家2 坦克 (仅PVP)
         if self.mode == "pvp":
             p2_start_x = SCREEN_WIDTH - (WALL_THICKNESS * 3)
             p2_start_y = GAME_AREA_BOTTOM_Y + GAME_AREA_HEIGHT / 2
-            
+
             # 检查坦克是否存在且是否在列表中
             if self.player2_tank and self.player2_tank in self.player_list:
                 # 如果坦克死亡，从列表中移除
                 if not self.player2_tank.is_alive():
                     self.player_list.remove(self.player2_tank)
                     self.player2_tank = None
-                    
+
             # 如果坦克不存在，创建新的
             if not self.player2_tank:
                 self.player2_tank = Tank(self.player2_tank_image, NEW_PLAYER_SCALE, p2_start_x, p2_start_y)
@@ -289,7 +293,7 @@ class GameView(arcade.View):
                     self.player2_tank.pymunk_body.angular_velocity = 0
                 # 同步Arcade Sprite
                 self.player2_tank.sync_with_pymunk_body()
-        
+
         # 确保player_list是最新的 (如果坦克是重新创建的)
         # 上面的逻辑已经尝试处理了player_list的更新，但更稳妥的方式可能是在setup中完全重建
         # 但由于start_new_round可能在setup之外被调用，我们需要确保player_list正确
@@ -301,9 +305,9 @@ class GameView(arcade.View):
         """ 设置游戏元素: 创建列表、墙壁、UI背景，然后开始第一回合 """
         self.player_list = arcade.SpriteList()
         self.bullet_list = arcade.SpriteList()
-        self.wall_list = arcade.SpriteList(use_spatial_hash=True) 
-        
-        current_wall_thickness = WALL_THICKNESS 
+        self.wall_list = arcade.SpriteList(use_spatial_hash=True)
+
+        current_wall_thickness = WALL_THICKNESS
         wall_color = arcade.color.DARK_SLATE_GRAY
 
         # --- 创建地图墙壁 (Arcade Sprites 和 Pymunk Shapes) ---
@@ -312,7 +316,7 @@ class GameView(arcade.View):
         body_bottom = pymunk.Body(body_type=pymunk.Body.STATIC)
         shape_bottom = pymunk.Segment(body_bottom, (0, GAME_AREA_BOTTOM_Y), (SCREEN_WIDTH, GAME_AREA_BOTTOM_Y), current_wall_thickness / 2)
         shape_bottom.collision_type = COLLISION_TYPE_WALL
-        shape_bottom.friction = 0.8 
+        shape_bottom.friction = 0.8
         shape_bottom.elasticity = WALL_ELASTICITY # 为墙壁设置弹性
         self.space.add(body_bottom, shape_bottom)
         for x_coord in range(0, SCREEN_WIDTH, current_wall_thickness):
@@ -381,15 +385,15 @@ class GameView(arcade.View):
         # UI面板背景 (可选) - 注意：这些绘制应该在 on_draw 中，setup只负责创建对象
         # 我将暂时注释掉这里的绘制，UI面板的视觉效果可以在on_draw中实现
         # # 顶部UI面板
-        # arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, 
-        #                                   SCREEN_HEIGHT - TOP_UI_PANEL_HEIGHT, SCREEN_HEIGHT, 
+        # arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH,
+        #                                   SCREEN_HEIGHT - TOP_UI_PANEL_HEIGHT, SCREEN_HEIGHT,
         #                                   arcade.color.LIGHT_STEEL_BLUE)
         # # 底部UI面板
-        # arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH, 
-        #                                   0, BOTTOM_UI_PANEL_HEIGHT, 
+        # arcade.draw_lrbt_rectangle_filled(0, SCREEN_WIDTH,
+        #                                   0, BOTTOM_UI_PANEL_HEIGHT,
         #                                   arcade.color.LIGHT_STEEL_BLUE)
 
-        arcade.set_background_color(arcade.color.LIGHT_GRAY) 
+        arcade.set_background_color(arcade.color.LIGHT_GRAY)
         self.start_new_round() # 初始化第一回合
 
     def on_show_view(self):
@@ -421,7 +425,7 @@ class GameView(arcade.View):
         # 玩家1 UI
         p1_ui_y_text = BOTTOM_UI_PANEL_HEIGHT - 15 # 文字稍高
         p1_ui_y_bar = BOTTOM_UI_PANEL_HEIGHT - 35  # 血条稍低
-        if self.player_tank and self.player_tank.is_alive(): 
+        if self.player_tank and self.player_tank.is_alive():
             arcade.draw_text("P1", 30, p1_ui_y_text, ui_text_color, font_size=18, anchor_y="center")
             self.draw_health_bar(70, p1_ui_y_bar, self.player_tank.health, self.player_tank.max_health)
         arcade.draw_text(f"胜场: {self.player1_score}", 200, p1_ui_y_bar + 7, ui_text_color, font_size=16, anchor_y="center") # 与血条对齐
@@ -430,11 +434,11 @@ class GameView(arcade.View):
         if self.mode == "pvp":
             # P2 胜场 (最右侧)
             p2_wins_x = SCREEN_WIDTH - 10 # 调整P2胜场X坐标，更靠右
-            arcade.draw_text(f"胜场: {self.player2_score}", 
-                             p2_wins_x, 
+            arcade.draw_text(f"胜场: {self.player2_score}",
+                             p2_wins_x,
                              p1_ui_y_bar + 7, # Y坐标与P1胜场对齐
-                             ui_text_color, 
-                             font_size=16, 
+                             ui_text_color,
+                             font_size=16,
                              anchor_x="right", anchor_y="center")
 
             # P2 血条 (在胜场的左边)
@@ -444,19 +448,19 @@ class GameView(arcade.View):
             health_bar_margin = 20 # 血条与胜场文字的间距
             p2_health_bar_right_x = p2_wins_x - estimated_wins_text_width - health_bar_margin
             p2_health_bar_x = p2_health_bar_right_x - 100 # bar_width 默认为100
-            
+
             if self.player2_tank and self.player2_tank.is_alive():
                 self.draw_health_bar(p2_health_bar_x, p1_ui_y_bar, self.player2_tank.health, self.player2_tank.max_health)
-                
+
                 # P2 标识 (在血条的左边)
                 p2_label_margin = 10 # P2标识与血条的间距
                 # 假设 "P2" 标识宽度约30-40
-                # estimated_p2_label_width = 40 
+                # estimated_p2_label_width = 40
                 # p2_label_x = p2_health_bar_x - p2_label_margin - estimated_p2_label_width / 2 # 以中心点定位
                 # 为了简单，直接给一个固定X，然后调整
                 # arcade.draw_text("P2", p2_health_bar_x - p2_label_margin - 15 , p1_ui_y_text, ui_text_color, font_size=18, anchor_x="center", anchor_y="center")
                 # 更精确的定位：
-                p2_text_x_for_label = p2_health_bar_x - p2_label_margin 
+                p2_text_x_for_label = p2_health_bar_x - p2_label_margin
                 arcade.draw_text("P2", p2_text_x_for_label, p1_ui_y_text, ui_text_color, font_size=18, anchor_x="right", anchor_y="center")
 
         # 绘制回合结束提示
@@ -466,14 +470,14 @@ class GameView(arcade.View):
             overlay_height = SCREEN_HEIGHT * 0.3
             overlay_center_x = SCREEN_WIDTH / 2
             overlay_center_y = SCREEN_HEIGHT / 2
-            arcade.draw_lrbt_rectangle_filled(overlay_center_x - overlay_width / 2, 
+            arcade.draw_lrbt_rectangle_filled(overlay_center_x - overlay_width / 2,
                                               overlay_center_x + overlay_width / 2,
                                               overlay_center_y - overlay_height / 2,
                                               overlay_center_y + overlay_height / 2,
                                               (0, 0, 0, 150)) # 半透明黑色
-            arcade.draw_text(self.round_result_text, 
-                             SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 
-                             arcade.color.WHITE_SMOKE, font_size=30, 
+            arcade.draw_text(self.round_result_text,
+                             SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2,
+                             arcade.color.WHITE_SMOKE, font_size=30,
                              anchor_x="center", anchor_y="center", bold=True)
 
 
@@ -492,18 +496,18 @@ class GameView(arcade.View):
         spacing = 2
         block_width = (bar_width - (max_health -1) * spacing) / max_health
         block_height = bar_height
-        
+
         for i in range(max_health):
             block_x = x + i * (block_width + spacing) + block_width / 2
             block_y = y + block_height / 2
             color = arcade.color.RED if i < current_health else arcade.color.GRAY
-            
+
             # 计算 lrtb 坐标
             left = block_x - block_width / 2
             right = block_x + block_width / 2
             bottom = block_y - block_height / 2
             top = block_y + block_height / 2
-            
+
             arcade.draw_lrbt_rectangle_filled(left, right, bottom, top, color) # Corrected: lrbt
             arcade.draw_lrbt_rectangle_outline(left, right, bottom, top, arcade.color.BLACK, border_width=1) # Corrected: lrbt
 
@@ -517,11 +521,11 @@ class GameView(arcade.View):
         if self.round_over:
             self.round_over_timer -= delta_time
             if self.round_over_timer <= 0:
-                print(f"DEBUG: Round over timer ended. P1 Score: {self.player1_score}, P2 Score: {self.player2_score}, Max Score: {self.max_score}")                
+                print(f"DEBUG: Round over timer ended. P1 Score: {self.player1_score}, P2 Score: {self.player2_score}, Max Score: {self.max_score}")
                 if self.player1_score >= self.max_score:
                     print("DEBUG: Player 1 wins the game! Showing GameOverView.")
                     game_over_view = GameOverView(
-                        f"玩家1 最终胜利!", 
+                        f"玩家1 最终胜利!",
                         self.mode,
                         self.player1_tank_image,
                         self.player2_tank_image
@@ -530,7 +534,7 @@ class GameView(arcade.View):
                 elif self.mode == "pvp" and self.player2_score >= self.max_score:
                     print("DEBUG: Player 2 wins the game! Showing GameOverView.")
                     game_over_view = GameOverView(
-                        f"玩家2 最终胜利!", 
+                        f"玩家2 最终胜利!",
                         self.mode,
                         self.player1_tank_image,
                         self.player2_tank_image
@@ -539,7 +543,7 @@ class GameView(arcade.View):
                 else:
                     print("DEBUG: No winner yet, starting new round.")
                     self.start_new_round()
-            return 
+            return
 
         # 更新物理空间
         # 启用小步长更新，提高物理模拟精度，减少穿模
@@ -552,7 +556,7 @@ class GameView(arcade.View):
         # 但坦克的移动现在由Pymunk控制，所以Tank.update()方法已变为空或只做同步。
         if self.player_list:
             self.player_list.update() # 调用每个Tank Sprite的update
-        
+
         # 同步Arcade Tank Sprites到Pymunk bodies的位置和角度
         if self.player_list:
             for tank_sprite in self.player_list:
@@ -575,7 +579,7 @@ class GameView(arcade.View):
                        pos.y < GAME_AREA_BOTTOM_Y - bullet_sprite.height or \
                        pos.x < -bullet_sprite.width or \
                        pos.x > SCREEN_WIDTH + bullet_sprite.width:
-                        
+
                         bullets_to_remove_arcade.append(bullet_sprite)
                         if bullet_sprite.pymunk_body not in bodies_to_remove_pymunk:
                              bodies_to_remove_pymunk.append(bullet_sprite.pymunk_body)
@@ -583,7 +587,7 @@ class GameView(arcade.View):
             # 移除旧的Arcade子弹碰撞检测逻辑
             # hit_walls = arcade.check_for_collision_with_list(bullet, self.wall_list) ...
             # hit_tanks = arcade.check_for_collision_with_list(bullet, self.player_list) ...
-            
+
         # 执行移除操作 (在space.step()之后进行)
         for sprite_to_remove in self.arcade_sprites_to_remove_post_step:
             if sprite_to_remove in self.bullet_list: # 假设只移除子弹
@@ -593,11 +597,11 @@ class GameView(arcade.View):
             #     self.player_list.remove(sprite_to_remove)
             #     if sprite_to_remove is self.player_tank: self.player_tank = None
             #     elif sprite_to_remove is self.player2_tank: self.player2_tank = None
-        
+
         for body_to_remove in self.pymunk_bodies_to_remove_post_step:
             if body_to_remove in self.space.bodies:
                  self.space.remove(body_to_remove, *body_to_remove.shapes)
-        
+
         self.arcade_sprites_to_remove_post_step.clear()
         self.pymunk_bodies_to_remove_post_step.clear()
 
@@ -673,7 +677,7 @@ class GameView(arcade.View):
                 body.angular_velocity = PYMUNK_PLAYER_TURN_RAD_PER_SEC
             elif key == arcade.key.RIGHT: # 逆时针
                 body.angular_velocity = -PYMUNK_PLAYER_TURN_RAD_PER_SEC
-            elif key == arcade.key.ENTER or key == arcade.key.RSHIFT: 
+            elif key == arcade.key.ENTER or key == arcade.key.RSHIFT:
                 if self.player2_tank and self.player2_tank.pymunk_body: # 确保坦克和其body存在
                     # 调用shoot方法并传递当前时间
                     bullet = self.player2_tank.shoot(self.total_time)
@@ -691,7 +695,7 @@ class GameView(arcade.View):
                 self.player_tank.pymunk_body.velocity = (0, 0)
             elif key == arcade.key.A or key == arcade.key.D:
                 self.player_tank.pymunk_body.angular_velocity = 0
-        
+
         # 玩家2
         if self.mode == "pvp" and self.player2_tank and self.player2_tank.pymunk_body:
             if key == arcade.key.UP or key == arcade.key.DOWN:
@@ -719,7 +723,7 @@ class GameOverView(arcade.View):
         arcade.draw_text("按 R 重新开始", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 50,
                          arcade.color.WHITE, font_size=20, anchor_x="center")
         arcade.draw_text("按 Q 退出", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 100,
-                         arcade.color.WHITE, font_size=20, anchor_x="center")    
+                         arcade.color.WHITE, font_size=20, anchor_x="center")
     def on_key_press(self, key, modifiers):
         if key == arcade.key.R:
             if self.last_mode == "pvp":
@@ -733,7 +737,7 @@ class GameOverView(arcade.View):
                     mode=self.last_mode,
                     player1_tank_image=self.player1_tank_image,
                     player2_tank_image=self.player2_tank_image
-                ) 
+                )
                 self.window.show_view(game_view)
         elif key == arcade.key.Q:
             arcade.exit()
