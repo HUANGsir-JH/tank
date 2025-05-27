@@ -66,6 +66,7 @@ class GameHost:
         self.client_join_callback: Optional[Callable] = None
         self.client_leave_callback: Optional[Callable] = None
         self.input_received_callback: Optional[Callable] = None
+        self.tank_selection_callback: Optional[Callable] = None  # 坦克选择回调
 
         # 游戏状态广播
         self.game_state_callback: Optional[Callable] = None
@@ -83,6 +84,10 @@ class GameHost:
             self.input_received_callback = input_received
         if game_state:
             self.game_state_callback = game_state
+
+    def set_tank_selection_callback(self, callback: Callable):
+        """设置坦克选择回调函数"""
+        self.tank_selection_callback = callback
 
     def start_hosting(self, room_name: str) -> bool:
         """开始主机服务"""
@@ -180,6 +185,22 @@ class GameHost:
 
         self.last_broadcast_time = current_time
 
+    def broadcast_message(self, message: UDPMessage):
+        """广播消息给所有连接的客户端"""
+        message_bytes = message.to_bytes()
+        for client in self.clients.values():
+            if client.connected:
+                try:
+                    self.host_socket.sendto(message_bytes, client.address)
+                except Exception as e:
+                    print(f"广播消息给客户端失败: {e}")
+
+    def send_to_client(self, client_id: str, message: UDPMessage):
+        """发送消息给指定客户端"""
+        if client_id in self.clients:
+            client = self.clients[client_id]
+            self._send_to_client(client, message)
+
     def get_client_input(self, client_id: str) -> set:
         """获取客户端当前输入状态"""
         if client_id in self.clients:
@@ -223,6 +244,10 @@ class GameHost:
 
             elif message.type == MessageType.PLAYER_DISCONNECT:
                 self._handle_disconnect(message, addr)
+
+            # 坦克选择相关消息
+            elif message.type in [MessageType.TANK_SELECTED, MessageType.TANK_SELECTION_READY]:
+                self._handle_tank_selection_message(message, addr)
 
         except ValueError:
             # 忽略无效消息
@@ -286,6 +311,19 @@ class GameHost:
         client_id = message.player_id
         if client_id in self.clients:
             self._remove_client(client_id, "client_disconnect")
+
+    def _handle_tank_selection_message(self, message: UDPMessage, addr: Tuple[str, int]):
+        """处理坦克选择相关消息"""
+        client_id = message.player_id
+        if client_id not in self.clients:
+            return
+
+        # 更新客户端心跳
+        self.clients[client_id].update_heartbeat()
+
+        # 调用坦克选择回调
+        if self.tank_selection_callback:
+            self.tank_selection_callback(client_id, message.type, message.data)
 
     def _check_client_timeouts(self):
         """检查客户端超时"""

@@ -230,7 +230,7 @@ class RoomBrowserView(arcade.View):
             self.selected_room_index = max(0, len(rooms) - 1)
 
     def _join_selected_room(self):
-        """加入选中的房间 - 直接连接"""
+        """加入选中的房间 - 直接连接到主机"""
         if not self.available_rooms:
             return
 
@@ -238,15 +238,15 @@ class RoomBrowserView(arcade.View):
         if 0 <= self.selected_room_index < len(room_list):
             selected_room = room_list[self.selected_room_index]
 
-            # 直接创建客户端视图并连接
+            # 直接进入网络客户端视图
             client_view = NetworkClientView()
             if client_view.connect_to_room(selected_room.host_ip, 12346, self.player_name):
                 self.window.show_view(client_view)
             else:
-                print("连接房间失败")
+                print("连接到房间失败")
 
     def _create_room_with_name(self, room_name: str):
-        """使用指定名称创建房间 - 直接进入主机等待"""
+        """使用指定名称创建房间 - 直接创建主机"""
         host_view = NetworkHostView()
         if host_view.start_hosting(room_name):
             self.window.show_view(host_view)
@@ -272,17 +272,21 @@ class NetworkHostView(arcade.View):
         self.connected_players: List[str] = ["host"]  # 包括主机自己
         self.game_started = False
 
+        # 游戏阶段管理
+        self.game_phase = "waiting"  # waiting -> tank_selection -> playing
+        self.tank_selection_started = False
+
         # 游戏相关（复用现有GameView的逻辑）
         self.game_view = None
 
-        # 坦克选择信息
-        self.host_tank_info = None  # 主机坦克信息
-        self.client_tank_info = {}  # 客户端坦克信息 {client_id: tank_info}
+        # 坦克选择信息（从NetworkTankSelectionView传递过来）
+        self.tank_selections = {}  # {player_id: {"tank_type": str, "tank_image_path": str}}
 
-        # 坦克选择阶段
-        self.tank_selection_phase = False
-        self.selected_tanks = set()  # 已选择的坦克类型，防止重复选择
-        self.players_ready = set()  # 已准备的玩家
+    def start_game_directly(self):
+        """直接开始游戏（从坦克选择视图调用）"""
+        self.game_phase = "playing"
+        self.game_started = True
+        self._start_game_with_selections()
 
     def start_hosting(self, room_name: str) -> bool:
         """开始主机服务"""
@@ -307,7 +311,7 @@ class NetworkHostView(arcade.View):
         """绘制视图"""
         self.clear()
 
-        if not self.game_started:
+        if self.game_phase == "waiting":
             # 等待玩家界面
             arcade.draw_text("等待玩家加入",
                            self.window.width // 2, self.window.height - 100,
@@ -324,6 +328,11 @@ class NetworkHostView(arcade.View):
             arcade.draw_text("Space 开始游戏  Esc 返回",
                            self.window.width // 2, 100,
                            arcade.color.LIGHT_GRAY, font_size=16, anchor_x="center")
+
+        elif self.game_phase == "tank_selection":
+            # 坦克选择界面
+            self._draw_tank_selection()
+
         else:
             # 游戏进行中，由游戏视图处理绘制
             if self.game_view:
@@ -331,15 +340,19 @@ class NetworkHostView(arcade.View):
 
     def on_key_press(self, key, modifiers):
         """处理按键事件"""
-        if key == arcade.key.ESCAPE and not self.game_started:
+        if key == arcade.key.ESCAPE and self.game_phase == "waiting":
             # 返回房间浏览
             browser_view = RoomBrowserView()
             self.window.show_view(browser_view)
 
-        elif key == arcade.key.SPACE and not self.game_started:
-            # 开始游戏 - 进入坦克选择阶段
-            if len(self.connected_players) >= 2:
+        elif key == arcade.key.SPACE and self.game_phase == "waiting":
+            # 开始坦克选择阶段
+            if len(self.connected_players) >= 1:
                 self._start_tank_selection()
+
+        elif self.game_phase == "tank_selection":
+            # 坦克选择阶段的按键处理
+            self._handle_tank_selection_keys(key)
 
         elif self.game_started and self.game_view:
             # 转发给游戏视图
@@ -373,50 +386,8 @@ class NetworkHostView(arcade.View):
             # 这里需要根据实际游戏逻辑来实现
             pass
 
-    def _start_tank_selection(self):
-        """开始坦克选择阶段"""
-        self.tank_selection_phase = True
-        self.selected_tanks.clear()
-        self.players_ready.clear()
-
-        # 通知所有客户端进入坦克选择阶段
-        # TODO: 发送坦克选择开始消息
-        print("坦克选择阶段开始")
-
-    def _handle_tank_selection(self, player_id: str, tank_type: str):
-        """处理坦克选择"""
-        if not self.tank_selection_phase:
-            return False
-
-        # 检查坦克是否已被选择
-        if tank_type in self.selected_tanks:
-            print(f"坦克类型 {tank_type} 已被其他玩家选择")
-            return False
-
-        # 记录选择
-        self.selected_tanks.add(tank_type)
-        if player_id == "host":
-            self.host_tank_info = {"tank_type": tank_type}
-        else:
-            self.client_tank_info[player_id] = {"tank_type": tank_type}
-
-        print(f"玩家 {player_id} 选择了坦克: {tank_type}")
-        return True
-
-    def _player_ready(self, player_id: str):
-        """玩家准备完成"""
-        self.players_ready.add(player_id)
-
-        # 检查是否所有玩家都准备完成
-        if len(self.players_ready) >= len(self.connected_players):
-            self._start_actual_game()
-
-    def _start_actual_game(self):
-        """所有玩家选择完成，开始实际游戏"""
-        self.tank_selection_phase = False
-
-    def _start_game(self):
-        """开始游戏"""
+    def _start_game_with_selections(self):
+        """使用坦克选择信息开始游戏"""
         # 创建网络游戏视图（基于现有GameView）
         try:
             from ..game_views import GameView
@@ -424,17 +395,29 @@ class NetworkHostView(arcade.View):
             # 如果相对导入失败，尝试绝对导入
             from game_views import GameView
 
-        # 传递坦克选择信息
+        # 从坦克选择信息中获取坦克图片
         player1_tank_image = None
         player2_tank_image = None
 
-        if self.host_tank_info:
-            player1_tank_image = self.host_tank_info.get("image_path")
+        # 主机坦克
+        host_tank_info = self.tank_selections.get("host")
+        if host_tank_info:
+            player1_tank_image = host_tank_info.get("tank_image_path")
 
-        # 获取第一个客户端的坦克信息
-        if self.client_tank_info:
-            first_client_info = list(self.client_tank_info.values())[0]
-            player2_tank_image = first_client_info.get("image_path")
+        # 第一个客户端坦克
+        client_ids = [pid for pid in self.tank_selections.keys() if pid != "host"]
+        if client_ids:
+            first_client_info = self.tank_selections.get(client_ids[0])
+            if first_client_info:
+                player2_tank_image = first_client_info.get("tank_image_path")
+
+        # 如果没有坦克选择信息，使用默认值
+        if not player1_tank_image:
+            from tank_sprites import PLAYER_IMAGE_PATH_GREEN
+            player1_tank_image = PLAYER_IMAGE_PATH_GREEN
+        if not player2_tank_image:
+            from tank_sprites import PLAYER_IMAGE_PATH_BLUE
+            player2_tank_image = PLAYER_IMAGE_PATH_BLUE
 
         self.game_view = GameView(
             mode="network_host",
@@ -443,7 +426,11 @@ class NetworkHostView(arcade.View):
         )
         self.game_view.setup()
         self.game_started = True
-        print("游戏开始!")
+        print(f"游戏开始! 主机坦克: {player1_tank_image}, 客户端坦克: {player2_tank_image}")
+
+    def _start_game(self):
+        """开始游戏（兼容旧方法）"""
+        self._start_game_with_selections()
 
     def _get_game_state(self) -> dict:
         """获取当前游戏状态"""
@@ -511,7 +498,10 @@ class NetworkClientView(arcade.View):
         self.game_state = {}
         self.connected = False
 
-        # 客户端坦克信息
+        # 游戏阶段管理
+        self.game_phase = "connecting"  # connecting -> playing
+
+        # 客户端坦克信息（从NetworkTankSelectionView传递过来）
         self.client_tank_info = None
 
         # 完整游戏视图（复用GameView的逻辑）
@@ -521,6 +511,7 @@ class NetworkClientView(arcade.View):
         # 线程安全的状态更新队列
         self.pending_updates = []
         self.pending_disconnection = None
+        self.pending_tank_selection = None  # 待处理的坦克选择开始消息
 
     def connect_to_room(self, host_ip: str, host_port: int, player_name: str) -> bool:
         """连接到房间"""
@@ -572,7 +563,7 @@ class NetworkClientView(arcade.View):
         """绘制视图"""
         self.clear()
 
-        if self.connected and self.game_view:
+        if self.connected and self.game_view and self.game_phase == "playing":
             # 使用完整游戏视图进行绘制
             self.game_view.on_draw()
 
@@ -591,6 +582,9 @@ class NetworkClientView(arcade.View):
             # 返回房间浏览
             browser_view = RoomBrowserView()
             self.window.show_view(browser_view)
+        elif self.game_phase == "tank_selection":
+            # 坦克选择阶段的按键处理
+            self._handle_client_tank_selection_keys(key)
         else:
             # 发送按键到服务器
             key_name = self._get_key_name(key)
@@ -642,21 +636,32 @@ class NetworkClientView(arcade.View):
 
         try:
             from game_views import GameView
-            from tank_selection import PLAYER_IMAGE_PATH_GREEN, PLAYER_IMAGE_PATH_DESERT
+            from tank_sprites import PLAYER_IMAGE_PATH_GREEN, PLAYER_IMAGE_PATH_BLUE
 
-            # 创建完整的游戏视图，使用默认坦克图片
-            # 客户端先用默认图片初始化，后续通过网络同步更新
+            # 创建完整的游戏视图
+            # 为主机和客户端提供默认坦克图片，避免None导致的显示问题
+            player1_tank_image = PLAYER_IMAGE_PATH_GREEN  # 主机默认绿色坦克
+            player2_tank_image = PLAYER_IMAGE_PATH_BLUE   # 客户端默认蓝色坦克
+
+            # 如果有客户端坦克选择信息，使用选择的坦克
+            if self.client_tank_info and self.client_tank_info.get("image_path"):
+                player2_tank_image = self.client_tank_info.get("image_path")
+
             self.game_view = GameView(
                 mode="network_client",
-                player1_tank_image=PLAYER_IMAGE_PATH_GREEN,   # 主机坦克默认图片
-                player2_tank_image=PLAYER_IMAGE_PATH_DESERT   # 客户端坦克默认图片
+                player1_tank_image=player1_tank_image,  # 主机坦克
+                player2_tank_image=player2_tank_image   # 客户端坦克
             )
             self.game_view.setup()
             self.game_initialized = True
             print("客户端游戏视图初始化完成")
+            print(f"主机坦克图片: {player1_tank_image}")
+            print(f"客户端坦克图片: {player2_tank_image}")
 
         except Exception as e:
             print(f"初始化游戏视图失败: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _sync_game_state(self, game_state: dict):
         """同步服务器游戏状态到本地游戏视图"""
@@ -666,10 +671,15 @@ class NetworkClientView(arcade.View):
         try:
             # 同步坦克状态
             tanks_data = game_state.get("tanks", [])
-            if self.game_view.player_list and len(tanks_data) >= len(self.game_view.player_list):
-                for i, tank in enumerate(self.game_view.player_list):
-                    if i < len(tanks_data):
-                        tank_data = tanks_data[i]
+            if self.game_view.player_list and len(tanks_data) > 0:
+                # 确保坦克列表有足够的坦克对象
+                while len(self.game_view.player_list) < len(tanks_data):
+                    # 如果坦克数量不足，创建新的坦克（这种情况不应该经常发生）
+                    print(f"警告: 需要创建额外的坦克对象 ({len(self.game_view.player_list)} < {len(tanks_data)})")
+
+                for i, tank_data in enumerate(tanks_data):
+                    if i < len(self.game_view.player_list):
+                        tank = self.game_view.player_list[i]
 
                         # 适配优化后的数据格式
                         if "pos" in tank_data:  # 新格式
@@ -677,11 +687,6 @@ class NetworkClientView(arcade.View):
                             tank.center_y = tank_data["pos"][1]
                             tank.angle = tank_data["ang"]
                             tank.health = tank_data.get("hp", 5)
-
-                            # 同步坦克类型和图片
-                            tank_type = tank_data.get("type", "green")
-                            self._update_tank_appearance(tank, tank_type)
-
                         else:  # 兼容旧格式
                             tank.center_x = tank_data["position"][0]
                             tank.center_y = tank_data["position"][1]
@@ -693,31 +698,44 @@ class NetworkClientView(arcade.View):
                             tank.pymunk_body.position = (tank.center_x, tank.center_y)
                             tank.pymunk_body.angle = math.radians(tank.angle + 90)  # 转换角度
 
+                        # 确保坦克可见
+                        if hasattr(tank, 'visible'):
+                            tank.visible = True
+
             # 同步子弹状态
             bullets_data = game_state.get("bullets", [])
             # 清空现有子弹
             self.game_view.bullet_list.clear()
 
-            # 重新创建子弹（修复构造函数调用）
+            # 重新创建子弹（修复构造函数参数）
             for bullet_data in bullets_data:
                 try:
-                    import arcade
+                    from tank_sprites import Bullet
 
-                    # 创建简化的子弹精灵用于显示（不使用完整的Bullet类）
+                    # 适配优化后的数据格式
                     if "pos" in bullet_data:  # 新格式
-                        bullet_sprite = arcade.SpriteCircle(4, arcade.color.YELLOW)
-                        bullet_sprite.center_x = bullet_data["pos"][0]
-                        bullet_sprite.center_y = bullet_data["pos"][1]
-                        bullet_sprite.angle = bullet_data["ang"]
+                        bullet_x = bullet_data["pos"][0]
+                        bullet_y = bullet_data["pos"][1]
+                        bullet_angle = bullet_data["ang"]
                     else:  # 兼容旧格式
-                        bullet_sprite = arcade.SpriteCircle(4, arcade.color.YELLOW)
-                        bullet_sprite.center_x = bullet_data["position"][0]
-                        bullet_sprite.center_y = bullet_data["position"][1]
-                        bullet_sprite.angle = bullet_data["angle"]
+                        bullet_x = bullet_data["position"][0]
+                        bullet_y = bullet_data["position"][1]
+                        bullet_angle = bullet_data["angle"]
 
-                    self.game_view.bullet_list.append(bullet_sprite)
+                    # 使用正确的Bullet构造函数参数
+                    bullet = Bullet(
+                        radius=4,  # 默认子弹半径
+                        owner=None,  # 客户端显示用，不需要owner
+                        tank_center_x=bullet_x,
+                        tank_center_y=bullet_y,
+                        actual_emission_angle_degrees=bullet_angle,
+                        speed_magnitude=16,  # 默认速度
+                        color=arcade.color.YELLOW_ORANGE  # 默认颜色
+                    )
+
+                    self.game_view.bullet_list.append(bullet)
                 except Exception as e:
-                    print(f"创建子弹精灵失败: {e}")
+                    print(f"创建子弹失败: {e}")
 
             # 同步回合信息
             round_info = game_state.get("round_info", {})
@@ -735,42 +753,25 @@ class NetworkClientView(arcade.View):
         except Exception as e:
             print(f"同步游戏状态失败: {e}")
 
-    def _update_tank_appearance(self, tank, tank_type: str):
-        """更新坦克外观"""
-        try:
-            from tank_selection import (PLAYER_IMAGE_PATH_GREEN, PLAYER_IMAGE_PATH_DESERT,
-                                      PLAYER_IMAGE_PATH_BLUE, PLAYER_IMAGE_PATH_GREY)
-            import os
 
-            # 根据坦克类型获取图片路径
-            tank_image_map = {
-                "green": PLAYER_IMAGE_PATH_GREEN,
-                "yellow": PLAYER_IMAGE_PATH_DESERT,
-                "blue": PLAYER_IMAGE_PATH_BLUE,
-                "grey": PLAYER_IMAGE_PATH_GREY
-            }
+# === NetworkHostView 坦克选择相关方法扩展 ===
 
-            image_path = tank_image_map.get(tank_type, PLAYER_IMAGE_PATH_GREEN)
+def _start_tank_selection(self):
+    """开始坦克选择阶段 - 跳转到专门的坦克选择视图"""
+    print("开始坦克选择阶段")
 
-            # 更新坦克图片（如果图片存在且与当前不同）
-            if (hasattr(tank, 'tank_image_file') and
-                tank.tank_image_file != image_path and
-                os.path.exists(image_path)):
+    # 创建坦克选择视图
+    from .network_tank_selection import NetworkTankSelectionView
+    tank_selection_view = NetworkTankSelectionView(
+        is_host=True,
+        room_name=self.game_host.room_name,
+        game_host=self.game_host
+    )
 
-                # 保存当前状态
-                old_x, old_y = tank.center_x, tank.center_y
-                old_angle = tank.angle
-                old_health = tank.health
+    # 跳转到坦克选择视图
+    self.window.show_view(tank_selection_view)
 
-                # 更新纹理
-                tank.tank_image_file = image_path
-                new_texture = arcade.load_texture(image_path)
-                tank.texture = new_texture
+# 将方法添加到NetworkHostView类中
+NetworkHostView._start_tank_selection = _start_tank_selection
 
-                # 恢复状态
-                tank.center_x, tank.center_y = old_x, old_y
-                tank.angle = old_angle
-                tank.health = old_health
 
-        except Exception as e:
-            print(f"更新坦克外观失败: {e}")

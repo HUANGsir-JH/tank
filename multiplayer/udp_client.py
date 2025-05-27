@@ -37,6 +37,7 @@ class GameClient:
         self.connection_callback: Optional[Callable] = None
         self.disconnection_callback: Optional[Callable] = None
         self.game_state_callback: Optional[Callable] = None
+        self.tank_selection_callback: Optional[Callable] = None  # 坦克选择回调
 
         # 心跳
         self.heartbeat_interval = 1.0  # 1秒发送一次心跳
@@ -51,6 +52,10 @@ class GameClient:
             self.disconnection_callback = disconnection
         if game_state:
             self.game_state_callback = game_state
+
+    def set_tank_selection_callback(self, callback: Callable):
+        """设置坦克选择回调函数"""
+        self.tank_selection_callback = callback
 
     def connect_to_host(self, host_ip: str, host_port: int, player_name: str) -> bool:
         """连接到游戏主机"""
@@ -170,6 +175,16 @@ class GameClient:
                 self.current_keys.remove(key)
                 self.pending_key_releases.append(key)
 
+    def send_message(self, message: UDPMessage):
+        """发送消息到主机"""
+        if not self.connected or not self.client_socket:
+            return
+
+        try:
+            self.client_socket.sendto(message.to_bytes(), self.host_address)
+        except Exception as e:
+            print(f"发送消息失败: {e}")
+
     def _network_loop(self):
         """网络处理主循环"""
         while self.running and self.connected:
@@ -222,6 +237,11 @@ class GameClient:
                 # 服务器通知断开连接
                 reason = message.data.get("reason", "server_disconnect")
                 self._handle_connection_lost(reason)
+
+            # 坦克选择相关消息
+            elif message.type in [MessageType.TANK_SELECTION_SYNC, MessageType.TANK_SELECTION_CONFLICT]:
+                if self.tank_selection_callback:
+                    self.tank_selection_callback(message.type, message.data)
 
         except ValueError:
             # 忽略无效消息

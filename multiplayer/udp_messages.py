@@ -22,16 +22,23 @@ class MessageType:
     GAME_START = "game_start"           # 游戏开始
     GAME_END = "game_end"               # 游戏结束
 
+    # 坦克选择相关消息
+    TANK_SELECTION_START = "tank_selection_start"    # 开始坦克选择
+    TANK_SELECTED = "tank_selected"                  # 玩家选择坦克
+    TANK_SELECTION_SYNC = "tank_selection_sync"      # 坦克选择状态同步
+    TANK_SELECTION_READY = "tank_selection_ready"    # 玩家准备完成
+    TANK_SELECTION_CONFLICT = "tank_selection_conflict"  # 坦克选择冲突
+
 
 class UDPMessage:
     """UDP消息封装类"""
-    
+
     def __init__(self, msg_type: str, data: Dict[str, Any], player_id: Optional[str] = None):
         self.type = msg_type
         self.data = data
         self.player_id = player_id
         self.timestamp = time.time()
-    
+
     def to_bytes(self) -> bytes:
         """将消息转换为字节数据"""
         msg_dict = {
@@ -41,15 +48,15 @@ class UDPMessage:
             "timestamp": self.timestamp
         }
         return json.dumps(msg_dict).encode('utf-8')
-    
+
     @classmethod
     def from_bytes(cls, data: bytes) -> 'UDPMessage':
         """从字节数据创建消息对象"""
         try:
             msg_dict = json.loads(data.decode('utf-8'))
             return cls(
-                msg_dict["type"], 
-                msg_dict["data"], 
+                msg_dict["type"],
+                msg_dict["data"],
                 msg_dict.get("player_id")
             )
         except (json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
@@ -58,9 +65,9 @@ class UDPMessage:
 
 class MessageFactory:
     """消息工厂类，用于创建标准格式的消息"""
-    
+
     @staticmethod
-    def create_room_advertise(room_name: str, current_players: int, max_players: int, 
+    def create_room_advertise(room_name: str, current_players: int, max_players: int,
                             game_mode: str = "pvp") -> UDPMessage:
         """创建房间广播消息"""
         data = {
@@ -70,15 +77,15 @@ class MessageFactory:
             "game_mode": game_mode
         }
         return UDPMessage(MessageType.ROOM_ADVERTISE, data)
-    
+
     @staticmethod
     def create_join_request(player_name: str) -> UDPMessage:
         """创建加入房间请求"""
         data = {"player_name": player_name}
         return UDPMessage(MessageType.JOIN_REQUEST, data)
-    
+
     @staticmethod
-    def create_join_response(success: bool, player_id: str = None, 
+    def create_join_response(success: bool, player_id: str = None,
                            reason: str = None) -> UDPMessage:
         """创建加入房间响应"""
         data = {
@@ -87,9 +94,9 @@ class MessageFactory:
             "reason": reason
         }
         return UDPMessage(MessageType.JOIN_RESPONSE, data)
-    
+
     @staticmethod
-    def create_player_input(player_id: str, keys_pressed: list, 
+    def create_player_input(player_id: str, keys_pressed: list,
                           keys_released: list = None) -> UDPMessage:
         """创建玩家输入消息"""
         data = {
@@ -97,7 +104,7 @@ class MessageFactory:
             "keys_released": keys_released or []
         }
         return UDPMessage(MessageType.PLAYER_INPUT, data, player_id)
-    
+
     @staticmethod
     def create_game_state(tanks: list, bullets: list, round_info: dict) -> UDPMessage:
         """创建游戏状态消息"""
@@ -107,17 +114,60 @@ class MessageFactory:
             "round_info": round_info
         }
         return UDPMessage(MessageType.GAME_STATE, data)
-    
+
     @staticmethod
     def create_heartbeat(player_id: str) -> UDPMessage:
         """创建心跳消息"""
         return UDPMessage(MessageType.HEARTBEAT, {}, player_id)
-    
+
     @staticmethod
     def create_disconnect(player_id: str, reason: str = "user_quit") -> UDPMessage:
         """创建断线消息"""
         data = {"reason": reason}
         return UDPMessage(MessageType.PLAYER_DISCONNECT, data, player_id)
+
+    # 坦克选择相关消息工厂方法
+    @staticmethod
+    def create_tank_selection_start() -> UDPMessage:
+        """创建开始坦克选择消息"""
+        return UDPMessage(MessageType.TANK_SELECTION_START, {})
+
+    @staticmethod
+    def create_tank_selected(player_id: str, tank_type: str, tank_image_path: str) -> UDPMessage:
+        """创建玩家选择坦克消息"""
+        data = {
+            "tank_type": tank_type,
+            "tank_image_path": tank_image_path
+        }
+        return UDPMessage(MessageType.TANK_SELECTED, data, player_id)
+
+    @staticmethod
+    def create_tank_selection_sync(selected_tanks: Dict[str, Dict[str, str]],
+                                 ready_players: list) -> UDPMessage:
+        """创建坦克选择状态同步消息"""
+        data = {
+            "selected_tanks": selected_tanks,  # {player_id: {"tank_type": str, "tank_image_path": str}}
+            "ready_players": ready_players
+        }
+        return UDPMessage(MessageType.TANK_SELECTION_SYNC, data)
+
+    @staticmethod
+    def create_tank_selection_ready(player_id: str, tank_type: str, tank_image_path: str) -> UDPMessage:
+        """创建玩家准备完成消息"""
+        data = {
+            "tank_type": tank_type,
+            "tank_image_path": tank_image_path
+        }
+        return UDPMessage(MessageType.TANK_SELECTION_READY, data, player_id)
+
+    @staticmethod
+    def create_tank_selection_conflict(player_id: str, tank_type: str, reason: str) -> UDPMessage:
+        """创建坦克选择冲突消息"""
+        data = {
+            "tank_type": tank_type,
+            "reason": reason
+        }
+        return UDPMessage(MessageType.TANK_SELECTION_CONFLICT, data, player_id)
 
 
 # 示例消息格式（用于文档和测试）
@@ -132,7 +182,7 @@ EXAMPLE_MESSAGES = {
         },
         "timestamp": 1234567890.123
     },
-    
+
     "player_input": {
         "type": "player_input",
         "player_id": "client_001",
@@ -142,7 +192,7 @@ EXAMPLE_MESSAGES = {
         },
         "timestamp": 1234567890.123
     },
-    
+
     "game_state": {
         "type": "game_state",
         "data": {
