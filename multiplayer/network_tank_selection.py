@@ -185,7 +185,7 @@ class NetworkTankSelectionView(arcade.View):
         center_y = SCREEN_HEIGHT / 2
         start_x = SCREEN_WIDTH / 2 - 300
         padding = 150
-
+        self.tank_sprites.draw()
         for i, tank_type in enumerate(self.available_tank_types):
             x_pos = start_x + i * padding
 
@@ -198,14 +198,9 @@ class NetworkTankSelectionView(arcade.View):
 
             # 绘制坦克图像
             try:
-                tank_texture = arcade.load_texture(self.tank_type_to_image[tank_type])
-                tank_scale = 0.15
-                tank_width = tank_texture.width * tank_scale
-                tank_height = tank_texture.height * tank_scale
-
-                arcade.draw_texture_rectangle(
-                    x_pos, center_y, tank_width, tank_height, tank_texture
-                )
+                tank_sprite = self.tank_sprites[i]
+                tank_width = tank_sprite.width
+                tank_height = tank_sprite.height
 
                 # 绘制选择状态
                 if tank_owner:
